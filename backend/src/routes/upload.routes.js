@@ -73,7 +73,7 @@ router.post('/', upload.single('file'), handleMulterError, async (req, res, next
         const ddl = schemaGenerator.generatePostgresDDL(tableName, processingResult.analysis.fields);
         const jsonSchema = schemaGenerator.generateJsonSchema(processingResult.analysis.fields);
 
-        datasetInfo.schema = {
+        datasetInfo.datasetSchema = {
           jsonSchema,
           sqlDDL: ddl,
           tableName,

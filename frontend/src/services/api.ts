@@ -21,9 +21,10 @@ export const updateApiBaseURL = (url: string) => {
 };
 
 // Upload
-export const uploadFile = async (file: File, datasetName?: string): Promise<StagingFile> => {
+export const uploadFile = async (file: File, datasetName?: string, autoProcess: boolean = true): Promise<StagingFile> => {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('autoProcess', String(autoProcess)); // Always send autoProcess (default: true)
   if (datasetName) {
     formData.append('datasetName', datasetName);
   }

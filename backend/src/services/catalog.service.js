@@ -12,7 +12,7 @@ class CatalogService {
    */
   async createDataset(datasetInfo) {
     try {
-      const DatasetModel = Dataset();
+      const DatasetModel = await Dataset(); // Wait for model to be ready
       const dataset = new DatasetModel(datasetInfo);
       await dataset.save();
 
@@ -31,7 +31,7 @@ class CatalogService {
    */
   async getDataset(datasetId) {
     try {
-      const DatasetModel = Dataset();
+      const DatasetModel = await Dataset(); // Wait for model to be ready
       const dataset = await DatasetModel.findOne({ datasetId });
       return dataset;
     } catch (error) {
@@ -48,7 +48,7 @@ class CatalogService {
    */
   async listDatasets(filters = {}, options = {}) {
     try {
-      const DatasetModel = Dataset();
+      const DatasetModel = await Dataset(); // Wait for model to be ready
       const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = options;
 
       const query = DatasetModel.find(filters)
@@ -82,7 +82,7 @@ class CatalogService {
    */
   async updateDataset(datasetId, updates) {
     try {
-      const DatasetModel = Dataset();
+      const DatasetModel = await Dataset(); // Wait for model to be ready
       const dataset = await DatasetModel.findOneAndUpdate(
         { datasetId },
         { $set: updates },
@@ -104,15 +104,15 @@ class CatalogService {
    */
   async deleteDataset(datasetId) {
     try {
-      const DatasetModel = Dataset();
+      const DatasetModel = await Dataset(); // Wait for model to be ready
       const dataset = await DatasetModel.findOne({ datasetId });
       if (!dataset) {
         throw new Error('Dataset not found');
       }
 
       // Delete table if stored in Postgres
-      if (dataset.storage === 'postgres' && dataset.schema?.tableName) {
-        await this.dropPostgresTable(dataset.schema.tableName);
+      if (dataset.storage === 'postgres' && dataset.datasetSchema?.tableName) {
+        await this.dropPostgresTable(dataset.datasetSchema.tableName);
       }
 
       await DatasetModel.deleteOne({ datasetId });
@@ -137,8 +137,19 @@ class CatalogService {
       // Create table
       await db.raw(ddl);
 
+      // Ensure data is an array
+      let dataArray;
+      if (Array.isArray(data)) {
+        dataArray = data;
+      } else if (typeof data === 'object' && data !== null) {
+        // Single object - wrap in array
+        dataArray = [data];
+      } else {
+        throw new Error(`Invalid data type for PostgreSQL storage: ${typeof data}. Expected array or object.`);
+      }
+
       // Flatten and insert data
-      const flattenedData = data.map(record =>
+      const flattenedData = dataArray.map(record =>
         jsonPipeline.flattenObject(record)
       );
 
@@ -146,7 +157,7 @@ class CatalogService {
         await db(tableName).insert(flattenedData);
       }
 
-      logger.info(`Stored ${flattenedData.length} records in table: ${tableName}`);
+      logger.info(`Stored ${flattenedData.length} record(s) in table: ${tableName}`);
       return flattenedData.length;
     } catch (error) {
       logger.error('Error storing data in PostgreSQL:', error);
@@ -167,16 +178,29 @@ class CatalogService {
       const db = mongoose.connection.db;
       const collection = db.collection(collectionName);
 
-      // Add metadata to each record
-      const documents = data.map(record => ({
-        ...record,
-        _datasetId: datasetId,
-        _importedAt: new Date(),
-      }));
+      // Handle both arrays and single objects
+      let documents;
+      if (Array.isArray(data)) {
+        // Data is already an array
+        documents = data.map(record => ({
+          ...record,
+          _datasetId: datasetId,
+          _importedAt: new Date(),
+        }));
+      } else if (typeof data === 'object' && data !== null) {
+        // Data is a single object - wrap it in an array
+        documents = [{
+          ...data,
+          _datasetId: datasetId,
+          _importedAt: new Date(),
+        }];
+      } else {
+        throw new Error(`Invalid data type for MongoDB storage: ${typeof data}. Expected array or object.`);
+      }
 
       const result = await collection.insertMany(documents);
 
-      logger.info(`Stored ${result.insertedCount} records in collection: ${collectionName}`);
+      logger.info(`Stored ${result.insertedCount} record(s) in collection: ${collectionName}`);
       return result.insertedCount;
     } catch (error) {
       logger.error('Error storing data in MongoDB:', error);
@@ -206,7 +230,7 @@ class CatalogService {
    */
   async searchDatasets(keyword) {
     try {
-      const DatasetModel = Dataset();
+      const DatasetModel = await Dataset(); // Wait for model to be ready
       const datasets = await DatasetModel.find({
         $or: [
           { originalName: { $regex: keyword, $options: 'i' } },

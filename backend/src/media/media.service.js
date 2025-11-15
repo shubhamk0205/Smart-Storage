@@ -12,8 +12,17 @@ class MediaService {
    */
   async processStagingFile(stagingFile, destinationKey = null) {
     try {
-      // Detect file type
-      const fileTypeInfo = await fileTypeService.detectFromFile(stagingFile.filePath);
+      // Detect file type (pass original filename for better detection)
+      const fileTypeInfo = await fileTypeService.detectFromFile(stagingFile.filePath, stagingFile.originalFilename);
+      
+      // Safety check: Don't process JSON files as media
+      if (fileTypeInfo.category === 'json' || 
+          fileTypeInfo.ext === 'json' || 
+          fileTypeInfo.ext === 'ndjson' ||
+          fileTypeInfo.mime === 'application/json' ||
+          fileTypeInfo.mime === 'application/x-ndjson') {
+        throw new Error('JSON files should be processed through the JSON pipeline, not media pipeline');
+      }
       
       // Extract metadata
       const metadata = await metadataService.extractMetadata(

@@ -29,15 +29,18 @@ router.get('/', async (req, res, next) => {
     res.json(result.datasets.map(d => ({
       name: d.originalName,
       backend: d.storage === 'postgres' ? 'sql' : 'nosql',
-      default_entity: d.schema?.tableName || `dataset_${d.datasetId}`,
+      default_entity: d.datasetSchema?.tableName || `dataset_${d.datasetId}`,
       schema_version: '1.0',
       created_at: d.createdAt,
       connection_info: d.storage === 'postgres' 
-        ? { type: 'postgres', table: d.schema?.tableName }
+        ? { type: 'postgres', table: d.datasetSchema?.tableName }
         : { type: 'mongodb', collection: `dataset_${d.datasetId}` },
-      entities: d.schema?.tableName ? [d.schema.tableName] : [],
-      tables: d.storage === 'postgres' && d.schema?.tableName ? [d.schema.tableName] : [],
+      entities: d.datasetSchema?.tableName ? [d.datasetSchema.tableName] : [],
+      tables: d.storage === 'postgres' && d.datasetSchema?.tableName ? [d.datasetSchema.tableName] : [],
       collections: d.storage === 'mongodb' ? [`dataset_${d.datasetId}`] : [],
+      // Include schema information
+      has_schema: !!d.datasetSchema,
+      schema: d.datasetSchema || null,
     })));
   } catch (error) {
     logger.error('Error listing datasets:', error);
@@ -71,15 +74,20 @@ router.get('/:name', async (req, res, next) => {
     res.json({
       name: dataset.originalName,
       backend: dataset.storage === 'postgres' ? 'sql' : 'nosql',
-      default_entity: dataset.schema?.tableName || `dataset_${dataset.datasetId}`,
+      default_entity: dataset.datasetSchema?.tableName || `dataset_${dataset.datasetId}`,
       schema_version: '1.0',
       created_at: dataset.createdAt,
       connection_info: dataset.storage === 'postgres' 
-        ? { type: 'postgres', table: dataset.schema?.tableName }
+        ? { type: 'postgres', table: dataset.datasetSchema?.tableName }
         : { type: 'mongodb', collection: `dataset_${dataset.datasetId}` },
-      entities: dataset.schema?.tableName ? [dataset.schema.tableName] : [],
-      tables: dataset.storage === 'postgres' && dataset.schema?.tableName ? [dataset.schema.tableName] : [],
+      entities: dataset.datasetSchema?.tableName ? [dataset.datasetSchema.tableName] : [],
+      tables: dataset.storage === 'postgres' && dataset.datasetSchema?.tableName ? [dataset.datasetSchema.tableName] : [],
       collections: dataset.storage === 'mongodb' ? [`dataset_${dataset.datasetId}`] : [],
+      // Include schema information
+      schema: dataset.datasetSchema || null,
+      json_schema: dataset.datasetSchema?.jsonSchema || null,
+      sql_ddl: dataset.datasetSchema?.sqlDDL || null,
+      fields: dataset.datasetSchema?.fields || null,
     });
   } catch (error) {
     logger.error('Error getting dataset:', error);

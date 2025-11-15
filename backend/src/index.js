@@ -59,8 +59,42 @@ const startServer = async () => {
   try {
     logger.info('🔄 Starting database connections...');
     
-    // Connect to MongoDB
+    // Connect to MongoDB and wait for it to be fully ready
     await connectMongoDB();
+    
+    // Ensure MongoDB connection is fully established before proceeding
+    const mongoose = (await import('mongoose')).default;
+    if (mongoose.connection.readyState !== 1) {
+      logger.warn('⚠️  MongoDB connection not fully established, waiting...');
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('MongoDB connection timeout after waiting'));
+        }, 10000);
+        
+        if (mongoose.connection.readyState === 1) {
+          clearTimeout(timeout);
+          resolve();
+          return;
+        }
+        
+        mongoose.connection.once('connected', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+        
+        mongoose.connection.once('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+    }
+    
+    // Verify database object is available
+    if (!mongoose.connection.db) {
+      throw new Error('MongoDB connection established but database object is not available');
+    }
+    
+    logger.info('✅ MongoDB connection verified and ready for model operations');
     // MongoDB connection success is logged in mongoose.js connection event handler
 
     // Test PostgreSQL connection (optional - server can run without it)

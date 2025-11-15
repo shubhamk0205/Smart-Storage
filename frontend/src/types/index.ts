@@ -7,6 +7,14 @@ export interface StagingFile {
   createdAt: string;
   mimeType?: string;
   fileKind?: string;
+  filePath?: string;
+  datasetName?: string;
+  processed?: boolean;
+  error?: string;
+  message?: string;
+  dataset?: Dataset;
+  mediaAsset?: MediaAsset;
+  profile?: JsonProfile;
 }
 
 export interface MediaAsset {
@@ -35,6 +43,16 @@ export interface Dataset {
   entities?: string[];
   tables?: string[];
   collections?: string[];
+  schema?: {
+    jsonSchema?: any;
+    sqlDDL?: string;
+    tableName?: string;
+    fields?: any;
+  };
+  json_schema?: any;
+  sql_ddl?: string;
+  fields?: any;
+  has_schema?: boolean;
 }
 
 export interface JsonProfile {

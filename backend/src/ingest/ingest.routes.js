@@ -13,6 +13,7 @@ const router = express.Router();
 /**
  * POST /ingest/upload
  * Upload file and create staging record
+ * Optionally auto-process if autoProcess=true in body
  */
 router.post('/upload', upload.single('file'), handleMulterError, async (req, res, next) => {
   try {
@@ -24,11 +25,92 @@ router.post('/upload', upload.single('file'), handleMulterError, async (req, res
     }
 
     const datasetName = req.body.datasetName || null;
+    const autoProcess = req.body.autoProcess === 'true' || req.body.autoProcess === true;
+    
     const stagingRecord = await stagingModel.create(
       req.file.path,
       req.file.originalname,
       datasetName
     );
+
+    // Auto-process if requested
+    if (autoProcess) {
+      try {
+        // First detect the file type (pass original filename for better detection)
+        const filePath = stagingRecord.filePath || req.file.path;
+        const detectionResult = await detectionService.detectAndClassify(filePath, stagingRecord.originalFilename || req.file.originalname);
+        
+        logger.info(`🔍 Detection result: mimeType=${detectionResult.mimeType}, fileKind=${detectionResult.fileKind}`);
+        
+        await stagingModel.update(stagingRecord.id, {
+          mime_type: detectionResult.mimeType,
+          file_kind: detectionResult.fileKind,
+          status: 'detected',
+        });
+
+        // CRITICAL: Check JSON FIRST before media (to prevent misrouting)
+        if (detectionResult.fileKind === 'json') {
+          logger.info(`📄 Routing to JSON pipeline: ${stagingRecord.originalFilename}`);
+          // Process as JSON
+          const result = await jsonOrchestrator.processStagingFile(
+            { ...stagingRecord, filePath },
+            datasetName
+          );
+          await stagingModel.update(stagingRecord.id, { status: 'completed' });
+          
+          return res.status(201).json({
+            ...stagingRecord,
+            status: 'completed',
+            mimeType: detectionResult.mimeType,
+            fileKind: detectionResult.fileKind,
+            processed: true,
+            dataset: result.dataset,
+            profile: result.profile,
+          });
+        } else if (['image', 'video', 'audio'].includes(detectionResult.fileKind)) {
+          logger.info(`🖼️  Routing to Media pipeline: ${stagingRecord.originalFilename}`);
+          // Process as media
+          const mediaAsset = await mediaService.processStagingFile(
+            { ...stagingRecord, filePath },
+            null
+          );
+          await stagingModel.update(stagingRecord.id, { status: 'completed' });
+          
+          return res.status(201).json({
+            ...stagingRecord,
+            status: 'completed',
+            mimeType: detectionResult.mimeType,
+            fileKind: detectionResult.fileKind,
+            processed: true,
+            mediaAsset,
+          });
+        } else {
+          // Unknown/unsupported type
+          logger.warn(`⚠️  Unsupported file type: ${detectionResult.fileKind} for ${stagingRecord.originalFilename}`);
+          return res.status(201).json({
+            ...stagingRecord,
+            mimeType: detectionResult.mimeType,
+            fileKind: detectionResult.fileKind,
+            processed: false,
+            message: `File type detected but auto-processing not supported for: ${detectionResult.fileKind}`,
+          });
+        }
+      } catch (processError) {
+        logger.error('❌ Error in auto-processing:', processError);
+        await stagingModel.update(stagingRecord.id, { 
+          status: 'error',
+          mime_type: null,
+          file_kind: null,
+        });
+        // Still return the staging record even if processing failed
+        return res.status(201).json({
+          ...stagingRecord,
+          processed: false,
+          error: processError.message,
+          status: 'error',
+        });
+      }
+    }
 
     res.status(201).json(stagingRecord);
   } catch (error) {

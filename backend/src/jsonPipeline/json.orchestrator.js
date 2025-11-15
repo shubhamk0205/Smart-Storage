@@ -54,7 +54,7 @@ class JsonOrchestrator {
         storage: backend === 'sql' ? 'postgres' : 'mongodb',
         recordCount,
         metadata: processingResult.analysis,
-        schema: {
+        datasetSchema: {
           jsonSchema,
           sqlDDL: ddl,
           tableName,

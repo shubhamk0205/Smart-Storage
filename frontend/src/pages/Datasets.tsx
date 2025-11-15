@@ -104,6 +104,7 @@ export const Datasets = () => {
               <TableHeader>Name</TableHeader>
               <TableHeader>Backend</TableHeader>
               <TableHeader>Default Entity</TableHeader>
+              <TableHeader>Schema</TableHeader>
               <TableHeader>Schema Version</TableHeader>
               <TableHeader>Created</TableHeader>
               <TableHeader>Actions</TableHeader>
@@ -122,6 +123,17 @@ export const Datasets = () => {
                     </span>
                   </TableCell>
                   <TableCell>{dataset.default_entity}</TableCell>
+                  <TableCell>
+                    {dataset.has_schema || dataset.schema ? (
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                        ✓ Available
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                        No Schema
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>{dataset.schema_version}</TableCell>
                   <TableCell>{formatDate(dataset.created_at)}</TableCell>
                   <TableCell>
@@ -182,6 +194,33 @@ export const Datasets = () => {
                 ))}
               </div>
             </div>
+            {selectedDataset.schema && (
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Schema Information</h3>
+                <div className="space-y-4">
+                  {selectedDataset.schema.jsonSchema && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">JSON Schema</h4>
+                      <JsonViewer data={selectedDataset.schema.jsonSchema} />
+                    </div>
+                  )}
+                  {selectedDataset.schema.sqlDDL && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">SQL DDL</h4>
+                      <pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm overflow-x-auto">
+                        <code className="text-gray-800 dark:text-gray-200">{selectedDataset.schema.sqlDDL}</code>
+                      </pre>
+                    </div>
+                  )}
+                  {selectedDataset.schema.fields && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Fields</h4>
+                      <JsonViewer data={selectedDataset.schema.fields} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div>
               <h3 className="text-lg font-semibold mb-2">Full Dataset Record</h3>
               <JsonViewer data={selectedDataset} />

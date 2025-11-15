@@ -4,10 +4,12 @@ import logger from '../utils/logger.js';
 class DetectionService {
   /**
    * Detect and classify file
+   * @param {string} filePath - Path to the file
+   * @param {string} originalFilename - Optional original filename for better detection
    */
-  async detectAndClassify(filePath) {
+  async detectAndClassify(filePath, originalFilename = null) {
     try {
-      const fileTypeInfo = await fileTypeService.detectFromFile(filePath);
+      const fileTypeInfo = await fileTypeService.detectFromFile(filePath, originalFilename);
       
       return {
         mimeType: fileTypeInfo.mime,

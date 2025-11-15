@@ -44,11 +44,25 @@ export const Upload = () => {
         });
       }, 200);
 
-      const result = await uploadFile(file, datasetName || undefined);
+      const result = await uploadFile(file, datasetName || undefined, true); // Auto-process by default
       clearInterval(progressInterval);
       setProgress(100);
       setStagingRecord(result);
-      toast.success('File uploaded successfully');
+      
+      // Check if file was processed
+      if (result.processed) {
+        if (result.dataset) {
+          toast.success(`File uploaded and processed! Dataset: ${result.dataset.name}`);
+        } else if (result.mediaAsset) {
+          toast.success('File uploaded and processed! Media asset created.');
+        } else {
+          toast.success('File uploaded and processed successfully!');
+        }
+      } else if (result.error) {
+        toast.error(`Upload succeeded but processing failed: ${result.error}`);
+      } else {
+        toast.success('File uploaded successfully (processing skipped)');
+      }
       setFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -163,12 +177,50 @@ export const Upload = () => {
       </Card>
 
       {stagingRecord && (
-        <Card title="Staging Record">
+        <Card title="Upload Result">
           <div className="space-y-4">
-            <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
-              <CheckCircle2 className="w-5 h-5" />
-              <span className="font-medium">File uploaded successfully</span>
-            </div>
+            {stagingRecord.processed ? (
+              <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-medium">File uploaded and processed successfully!</span>
+              </div>
+            ) : stagingRecord.error ? (
+              <div className="flex items-center space-x-2 text-red-600 dark:text-red-400">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-medium">File uploaded but processing failed: {stagingRecord.error}</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-medium">File uploaded successfully</span>
+              </div>
+            )}
+            
+            {stagingRecord.dataset && (
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                <h3 className="font-semibold text-green-900 dark:text-green-100 mb-2">Dataset Created</h3>
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  <strong>Name:</strong> {stagingRecord.dataset.name}<br />
+                  <strong>Backend:</strong> {stagingRecord.dataset.backend}<br />
+                  <strong>Storage:</strong> {stagingRecord.dataset.backend === 'sql' ? 'PostgreSQL' : 'MongoDB'}
+                </p>
+              </div>
+            )}
+            
+            {stagingRecord.mediaAsset && (
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Media Asset Created</h3>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  <strong>URL:</strong> <a href={stagingRecord.mediaAsset.publicUrl} target="_blank" rel="noopener noreferrer" className="underline">{stagingRecord.mediaAsset.publicUrl}</a><br />
+                  {stagingRecord.mediaAsset.width && stagingRecord.mediaAsset.height && (
+                    <>
+                      <strong>Dimensions:</strong> {stagingRecord.mediaAsset.width} × {stagingRecord.mediaAsset.height}<br />
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
+            
             <JsonViewer data={stagingRecord} />
           </div>
         </Card>

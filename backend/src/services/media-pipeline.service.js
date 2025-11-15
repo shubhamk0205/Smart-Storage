@@ -19,11 +19,20 @@ class MediaPipelineService {
     try {
       logger.info(`Processing media file: ${originalFilename}`);
 
-      // Step 1: Detect specific file type using file-type library
-      const fileTypeInfo = await fileTypeService.detectFromFile(filePath);
+      // Step 1: Detect specific file type (pass original filename for better detection)
+      const fileTypeInfo = await fileTypeService.detectFromFile(filePath, originalFilename);
       const { mime: mimeType, ext, category } = fileTypeInfo;
 
       logger.info(`Detected file type - MIME: ${mimeType}, Extension: ${ext}, Category: ${category}`);
+
+      // Safety check: Don't process JSON files as media
+      if (category === 'json' || 
+          ext === 'json' || 
+          ext === 'ndjson' ||
+          mimeType === 'application/json' ||
+          mimeType === 'application/x-ndjson') {
+        throw new Error(`JSON files (${ext}) should be processed through the JSON pipeline, not media pipeline`);
+      }
 
       // Step 2: Create table for this extension if it doesn't exist
       await mediaModel.createTableIfNotExists(ext, mimeType);

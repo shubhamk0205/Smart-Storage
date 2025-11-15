@@ -64,12 +64,14 @@ class StagingModel {
     return {
       id: record.id,
       originalFilename: record.original_filename,
+      filePath: record.file_path,
       size: record.size_bytes,
       sha256: record.sha256,
       status: record.status,
       createdAt: record.created_at,
       mimeType: record.mime_type,
       fileKind: record.file_kind,
+      datasetName: record.dataset_name,
     };
   }
 
@@ -115,6 +117,15 @@ class StagingModel {
       fileKind: record.file_kind,
       datasetName: record.dataset_name,
     };
+  }
+
+  /**
+   * Get staging file by ID with filePath
+   */
+  async getByIdWithPath(id) {
+    const file = await this.getById(id);
+    if (!file) return null;
+    return file;
   }
 
   /**

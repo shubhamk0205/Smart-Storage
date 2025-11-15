@@ -65,7 +65,7 @@ class RetrievalService {
   async retrieveFromPostgres(dataset, options = {}) {
     try {
       const { page = 1, limit = 100, where = {}, orderBy = 'id' } = options;
-      const tableName = dataset.schema?.tableName;
+      const tableName = dataset.datasetSchema?.tableName;
 
       if (!tableName) {
         throw new Error('Table name not found in dataset schema');
@@ -240,7 +240,7 @@ class RetrievalService {
         recordCount: dataset.recordCount,
         fileSize: dataset.fileSize,
         createdAt: dataset.createdAt,
-        schema: dataset.schema?.fields,
+        schema: dataset.datasetSchema?.fields,
       };
 
       return stats;
@@ -276,7 +276,7 @@ class RetrievalService {
       // Get data
       let data;
       if (datasetObj.storage === 'postgres') {
-        const tableName = datasetObj.schema?.tableName || entity;
+        const tableName = datasetObj.datasetSchema?.tableName || entity;
         let query = db(tableName);
         
         if (Object.keys(filter).length > 0) {
