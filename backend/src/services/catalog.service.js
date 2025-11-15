@@ -4,6 +4,45 @@ import logger from '../utils/logger.js';
 import schemaGenerator from './schema-generator.service.js';
 import jsonPipeline from './json-pipeline.service.js';
 
+// Ensure dataset_catalog table exists in PostgreSQL
+const ensurePostgresCatalogTable = async () => {
+  try {
+    const exists = await db.schema.hasTable('dataset_catalog');
+    if (!exists) {
+      await db.schema.createTable('dataset_catalog', (table) => {
+        table.increments('id').primary();
+        table.string('dataset_id', 255).unique().notNullable();
+        table.string('original_name', 500).notNullable();
+        table.text('file_path').notNullable();
+        table.bigInteger('file_size').notNullable();
+        table.string('mime_type', 100).notNullable();
+        table.string('extension', 50).notNullable();
+        table.string('category', 50).notNullable();
+        table.string('storage', 50).notNullable();
+        table.integer('record_count').defaultTo(0);
+        table.jsonb('metadata');
+        table.jsonb('dataset_schema');
+        table.jsonb('processing');
+        table.specificType('tags', 'TEXT[]');
+        table.text('description');
+        table.timestamp('created_at').defaultTo(db.fn.now());
+        table.timestamp('updated_at').defaultTo(db.fn.now());
+        
+        // Indexes
+        table.index('dataset_id');
+        table.index('category');
+        table.index('storage');
+        table.index('created_at');
+        table.index('mime_type');
+      });
+      logger.info('Created dataset_catalog table in PostgreSQL');
+    }
+  } catch (error) {
+    logger.error('Error ensuring dataset_catalog table:', error);
+    // Don't throw - allow MongoDB fallback
+  }
+};
+
 class CatalogService {
   /**
    * Create a new dataset entry in catalog
@@ -12,12 +51,63 @@ class CatalogService {
    */
   async createDataset(datasetInfo) {
     try {
-      const DatasetModel = await Dataset(); // Wait for model to be ready
-      const dataset = new DatasetModel(datasetInfo);
-      await dataset.save();
+      const storage = datasetInfo.storage || 'mongodb';
+      
+      // SQL datasets go to PostgreSQL catalog
+      if (storage === 'postgres') {
+        await ensurePostgresCatalogTable();
+        
+        const [record] = await db('dataset_catalog')
+          .insert({
+            dataset_id: datasetInfo.datasetId,
+            original_name: datasetInfo.originalName,
+            file_path: datasetInfo.filePath,
+            file_size: datasetInfo.fileSize,
+            mime_type: datasetInfo.mimeType,
+            extension: datasetInfo.extension,
+            category: datasetInfo.category,
+            storage: storage,
+            record_count: datasetInfo.recordCount || 0,
+            metadata: datasetInfo.metadata || {},
+            dataset_schema: datasetInfo.datasetSchema || null,
+            processing: datasetInfo.processing || { processed: false },
+            tags: datasetInfo.tags || [],
+            description: datasetInfo.description || null,
+          })
+          .returning('*');
+        
+        // Convert to MongoDB-like format for consistency
+        const dataset = {
+          datasetId: record.dataset_id,
+          originalName: record.original_name,
+          filePath: record.file_path,
+          fileSize: record.file_size,
+          mimeType: record.mime_type,
+          extension: record.extension,
+          category: record.category,
+          storage: record.storage,
+          recordCount: record.record_count,
+          metadata: typeof record.metadata === 'string' ? JSON.parse(record.metadata) : record.metadata,
+          datasetSchema: typeof record.dataset_schema === 'string' ? JSON.parse(record.dataset_schema) : record.dataset_schema,
+          processing: typeof record.processing === 'string' ? JSON.parse(record.processing) : record.processing,
+          tags: record.tags || [],
+          description: record.description,
+          createdAt: record.created_at,
+          updatedAt: record.updated_at,
+        };
+        
+        logger.info(`Dataset cataloged in PostgreSQL: ${dataset.datasetId}`);
+        return dataset;
+      } 
+      // NoSQL datasets go to MongoDB catalog
+      else {
+        const DatasetModel = await Dataset(); // Wait for model to be ready
+        const dataset = new DatasetModel(datasetInfo);
+        await dataset.save();
 
-      logger.info(`Dataset cataloged: ${dataset.datasetId}`);
-      return dataset;
+        logger.info(`Dataset cataloged in MongoDB: ${dataset.datasetId}`);
+        return dataset;
+      }
     } catch (error) {
       logger.error('Error creating dataset:', error);
       throw error;
@@ -31,6 +121,38 @@ class CatalogService {
    */
   async getDataset(datasetId) {
     try {
+      // Try PostgreSQL first (SQL datasets)
+      try {
+        const record = await db('dataset_catalog')
+          .where({ dataset_id: datasetId })
+          .first();
+        
+        if (record) {
+          return {
+            datasetId: record.dataset_id,
+            originalName: record.original_name,
+            filePath: record.file_path,
+            fileSize: record.file_size,
+            mimeType: record.mime_type,
+            extension: record.extension,
+            category: record.category,
+            storage: record.storage,
+            recordCount: record.record_count,
+            metadata: typeof record.metadata === 'string' ? JSON.parse(record.metadata) : record.metadata,
+            datasetSchema: typeof record.dataset_schema === 'string' ? JSON.parse(record.dataset_schema) : record.dataset_schema,
+            processing: typeof record.processing === 'string' ? JSON.parse(record.processing) : record.processing,
+            tags: record.tags || [],
+            description: record.description,
+            createdAt: record.created_at,
+            updatedAt: record.updated_at,
+          };
+        }
+      } catch (pgError) {
+        // PostgreSQL not available or table doesn't exist, try MongoDB
+        logger.debug('PostgreSQL catalog lookup failed, trying MongoDB:', pgError.message);
+      }
+      
+      // Try MongoDB (NoSQL datasets)
       const DatasetModel = await Dataset(); // Wait for model to be ready
       const dataset = await DatasetModel.findOne({ datasetId });
       return dataset;
@@ -48,24 +170,93 @@ class CatalogService {
    */
   async listDatasets(filters = {}, options = {}) {
     try {
-      const DatasetModel = await Dataset(); // Wait for model to be ready
       const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = options;
-
-      const query = DatasetModel.find(filters)
-        .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
-        .limit(limit)
-        .skip((page - 1) * limit);
-
-      const datasets = await query;
-      const total = await DatasetModel.countDocuments(filters);
-
+      const allDatasets = [];
+      
+      // Get SQL datasets from PostgreSQL
+      try {
+        await ensurePostgresCatalogTable();
+        
+        let pgQuery = db('dataset_catalog');
+        
+        // Apply filters
+        if (filters.storage) {
+          pgQuery = pgQuery.where('storage', filters.storage);
+        }
+        if (filters.category) {
+          pgQuery = pgQuery.where('category', filters.category);
+        }
+        
+        const pgDatasets = await pgQuery
+          .orderBy(sortBy === 'createdAt' ? 'created_at' : sortBy, sortOrder)
+          .limit(limit * 2) // Get more to account for MongoDB results
+          .offset((page - 1) * limit);
+        
+        // Convert PostgreSQL format to MongoDB-like format
+        for (const record of pgDatasets) {
+          allDatasets.push({
+            datasetId: record.dataset_id,
+            originalName: record.original_name,
+            filePath: record.file_path,
+            fileSize: record.file_size,
+            mimeType: record.mime_type,
+            extension: record.extension,
+            category: record.category,
+            storage: record.storage,
+            recordCount: record.record_count,
+            metadata: typeof record.metadata === 'string' ? JSON.parse(record.metadata) : record.metadata,
+            datasetSchema: typeof record.dataset_schema === 'string' ? JSON.parse(record.dataset_schema) : record.dataset_schema,
+            processing: typeof record.processing === 'string' ? JSON.parse(record.processing) : record.processing,
+            tags: record.tags || [],
+            description: record.description,
+            createdAt: record.created_at,
+            updatedAt: record.updated_at,
+          });
+        }
+      } catch (pgError) {
+        logger.debug('PostgreSQL catalog query failed:', pgError.message);
+      }
+      
+      // Get NoSQL datasets from MongoDB
+      try {
+        const DatasetModel = await Dataset(); // Wait for model to be ready
+        
+        const mongoFilters = { ...filters };
+        // Convert storage filter for MongoDB
+        if (filters.storage === 'postgres') {
+          // Skip MongoDB if filtering for postgres only
+        } else {
+          const mongoQuery = DatasetModel.find(mongoFilters)
+            .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+            .limit(limit * 2)
+            .skip((page - 1) * limit);
+          
+          const mongoDatasets = await mongoQuery;
+          allDatasets.push(...mongoDatasets);
+        }
+      } catch (mongoError) {
+        logger.debug('MongoDB catalog query failed:', mongoError.message);
+      }
+      
+      // Sort combined results
+      allDatasets.sort((a, b) => {
+        const aVal = a[sortBy] || a.createdAt;
+        const bVal = b[sortBy] || b.createdAt;
+        return sortOrder === 'desc' 
+          ? (bVal > aVal ? 1 : -1)
+          : (aVal > bVal ? 1 : -1);
+      });
+      
+      // Apply pagination to combined results
+      const paginatedDatasets = allDatasets.slice((page - 1) * limit, page * limit);
+      
       return {
-        datasets,
+        datasets: paginatedDatasets,
         pagination: {
           page,
           limit,
-          total,
-          pages: Math.ceil(total / limit),
+          total: allDatasets.length,
+          pages: Math.ceil(allDatasets.length / limit),
         },
       };
     } catch (error) {
@@ -82,6 +273,48 @@ class CatalogService {
    */
   async updateDataset(datasetId, updates) {
     try {
+      // Try PostgreSQL first
+      try {
+        const record = await db('dataset_catalog')
+          .where({ dataset_id: datasetId })
+          .first();
+        
+        if (record) {
+          const updateData = {};
+          if (updates.tags !== undefined) updateData.tags = updates.tags;
+          if (updates.description !== undefined) updateData.description = updates.description;
+          if (updates.metadata !== undefined) updateData.metadata = updates.metadata;
+          updateData.updated_at = db.fn.now();
+          
+          const [updated] = await db('dataset_catalog')
+            .where({ dataset_id: datasetId })
+            .update(updateData)
+            .returning('*');
+          
+          return {
+            datasetId: updated.dataset_id,
+            originalName: updated.original_name,
+            filePath: updated.file_path,
+            fileSize: updated.file_size,
+            mimeType: updated.mime_type,
+            extension: updated.extension,
+            category: updated.category,
+            storage: updated.storage,
+            recordCount: updated.record_count,
+            metadata: typeof updated.metadata === 'string' ? JSON.parse(updated.metadata) : updated.metadata,
+            datasetSchema: typeof updated.dataset_schema === 'string' ? JSON.parse(updated.dataset_schema) : updated.dataset_schema,
+            processing: typeof updated.processing === 'string' ? JSON.parse(updated.processing) : updated.processing,
+            tags: updated.tags || [],
+            description: updated.description,
+            createdAt: updated.created_at,
+            updatedAt: updated.updated_at,
+          };
+        }
+      } catch (pgError) {
+        logger.debug('PostgreSQL update failed, trying MongoDB:', pgError.message);
+      }
+      
+      // Try MongoDB
       const DatasetModel = await Dataset(); // Wait for model to be ready
       const dataset = await DatasetModel.findOneAndUpdate(
         { datasetId },
@@ -104,20 +337,48 @@ class CatalogService {
    */
   async deleteDataset(datasetId) {
     try {
+      // Try PostgreSQL first
+      try {
+        const record = await db('dataset_catalog')
+          .where({ dataset_id: datasetId })
+          .first();
+        
+        if (record) {
+          // Delete table if stored in Postgres
+          const datasetSchema = typeof record.dataset_schema === 'string' 
+            ? JSON.parse(record.dataset_schema) 
+            : record.dataset_schema;
+          
+          if (record.storage === 'postgres' && datasetSchema?.tableName) {
+            await this.dropPostgresTable(datasetSchema.tableName);
+          }
+          
+          await db('dataset_catalog')
+            .where({ dataset_id: datasetId })
+            .delete();
+          
+          logger.info(`Dataset deleted from PostgreSQL: ${datasetId}`);
+          return true;
+        }
+      } catch (pgError) {
+        logger.debug('PostgreSQL delete failed, trying MongoDB:', pgError.message);
+      }
+      
+      // Try MongoDB
       const DatasetModel = await Dataset(); // Wait for model to be ready
       const dataset = await DatasetModel.findOne({ datasetId });
       if (!dataset) {
         throw new Error('Dataset not found');
       }
 
-      // Delete table if stored in Postgres
+      // Delete table if stored in Postgres (shouldn't happen for MongoDB catalog, but check anyway)
       if (dataset.storage === 'postgres' && dataset.datasetSchema?.tableName) {
         await this.dropPostgresTable(dataset.datasetSchema.tableName);
       }
 
       await DatasetModel.deleteOne({ datasetId });
 
-      logger.info(`Dataset deleted: ${datasetId}`);
+      logger.info(`Dataset deleted from MongoDB: ${datasetId}`);
       return true;
     } catch (error) {
       logger.error('Error deleting dataset:', error);
@@ -230,16 +491,58 @@ class CatalogService {
    */
   async searchDatasets(keyword) {
     try {
-      const DatasetModel = await Dataset(); // Wait for model to be ready
-      const datasets = await DatasetModel.find({
-        $or: [
-          { originalName: { $regex: keyword, $options: 'i' } },
-          { description: { $regex: keyword, $options: 'i' } },
-          { tags: { $regex: keyword, $options: 'i' } },
-        ],
-      }).limit(50);
+      const allDatasets = [];
+      
+      // Search PostgreSQL catalog
+      try {
+        await ensurePostgresCatalogTable();
+        
+        const pgDatasets = await db('dataset_catalog')
+          .where('original_name', 'ilike', `%${keyword}%`)
+          .orWhere('description', 'ilike', `%${keyword}%`)
+          .limit(50);
+        
+        for (const record of pgDatasets) {
+          allDatasets.push({
+            datasetId: record.dataset_id,
+            originalName: record.original_name,
+            filePath: record.file_path,
+            fileSize: record.file_size,
+            mimeType: record.mime_type,
+            extension: record.extension,
+            category: record.category,
+            storage: record.storage,
+            recordCount: record.record_count,
+            metadata: typeof record.metadata === 'string' ? JSON.parse(record.metadata) : record.metadata,
+            datasetSchema: typeof record.dataset_schema === 'string' ? JSON.parse(record.dataset_schema) : record.dataset_schema,
+            processing: typeof record.processing === 'string' ? JSON.parse(record.processing) : record.processing,
+            tags: record.tags || [],
+            description: record.description,
+            createdAt: record.created_at,
+            updatedAt: record.updated_at,
+          });
+        }
+      } catch (pgError) {
+        logger.debug('PostgreSQL search failed:', pgError.message);
+      }
+      
+      // Search MongoDB catalog
+      try {
+        const DatasetModel = await Dataset(); // Wait for model to be ready
+        const mongoDatasets = await DatasetModel.find({
+          $or: [
+            { originalName: { $regex: keyword, $options: 'i' } },
+            { description: { $regex: keyword, $options: 'i' } },
+            { tags: { $regex: keyword, $options: 'i' } },
+          ],
+        }).limit(50);
+        
+        allDatasets.push(...mongoDatasets);
+      } catch (mongoError) {
+        logger.debug('MongoDB search failed:', mongoError.message);
+      }
 
-      return datasets;
+      return allDatasets;
     } catch (error) {
       logger.error('Error searching datasets:', error);
       throw error;

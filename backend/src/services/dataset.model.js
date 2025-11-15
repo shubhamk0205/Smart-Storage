@@ -163,7 +163,8 @@ const getModel = async () => {
       try {
         // Create schema only when mongoose is ready
         const schema = createDatasetSchema();
-        Dataset = mongoose.model('Dataset', schema);
+        // Use explicit collection name to avoid keyword conflicts
+        Dataset = mongoose.model('Dataset', schema, 'dataset_catalog');
       } catch (schemaError) {
         const errorDetails = {
           message: schemaError.message,
