@@ -12,7 +12,8 @@ class CatalogService {
    */
   async createDataset(datasetInfo) {
     try {
-      const dataset = new Dataset(datasetInfo);
+      const DatasetModel = Dataset();
+      const dataset = new DatasetModel(datasetInfo);
       await dataset.save();
 
       logger.info(`Dataset cataloged: ${dataset.datasetId}`);
@@ -30,7 +31,8 @@ class CatalogService {
    */
   async getDataset(datasetId) {
     try {
-      const dataset = await Dataset.findOne({ datasetId });
+      const DatasetModel = Dataset();
+      const dataset = await DatasetModel.findOne({ datasetId });
       return dataset;
     } catch (error) {
       logger.error('Error fetching dataset:', error);
@@ -46,15 +48,16 @@ class CatalogService {
    */
   async listDatasets(filters = {}, options = {}) {
     try {
+      const DatasetModel = Dataset();
       const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = options;
 
-      const query = Dataset.find(filters)
+      const query = DatasetModel.find(filters)
         .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
         .limit(limit)
         .skip((page - 1) * limit);
 
       const datasets = await query;
-      const total = await Dataset.countDocuments(filters);
+      const total = await DatasetModel.countDocuments(filters);
 
       return {
         datasets,
@@ -79,7 +82,8 @@ class CatalogService {
    */
   async updateDataset(datasetId, updates) {
     try {
-      const dataset = await Dataset.findOneAndUpdate(
+      const DatasetModel = Dataset();
+      const dataset = await DatasetModel.findOneAndUpdate(
         { datasetId },
         { $set: updates },
         { new: true }
@@ -100,7 +104,8 @@ class CatalogService {
    */
   async deleteDataset(datasetId) {
     try {
-      const dataset = await Dataset.findOne({ datasetId });
+      const DatasetModel = Dataset();
+      const dataset = await DatasetModel.findOne({ datasetId });
       if (!dataset) {
         throw new Error('Dataset not found');
       }
@@ -110,7 +115,7 @@ class CatalogService {
         await this.dropPostgresTable(dataset.schema.tableName);
       }
 
-      await Dataset.deleteOne({ datasetId });
+      await DatasetModel.deleteOne({ datasetId });
 
       logger.info(`Dataset deleted: ${datasetId}`);
       return true;
@@ -158,7 +163,8 @@ class CatalogService {
   async storeInMongoDB(datasetId, data) {
     try {
       const collectionName = `dataset_${datasetId}`;
-      const db = Dataset.db;
+      const mongoose = (await import('mongoose')).default;
+      const db = mongoose.connection.db;
       const collection = db.collection(collectionName);
 
       // Add metadata to each record
@@ -200,7 +206,8 @@ class CatalogService {
    */
   async searchDatasets(keyword) {
     try {
-      const datasets = await Dataset.find({
+      const DatasetModel = Dataset();
+      const datasets = await DatasetModel.find({
         $or: [
           { originalName: { $regex: keyword, $options: 'i' } },
           { description: { $regex: keyword, $options: 'i' } },

@@ -52,13 +52,13 @@ router.post('/', upload.single('file'), handleMulterError, async (req, res, next
     // Step 3: Process based on category
     if (['image', 'video', 'audio'].includes(fileTypeInfo.category)) {
       // Media pipeline
-      const processingResult = await mediaPipeline.processMedia(filePath, fileTypeInfo.category);
-      datasetInfo.metadata = processingResult.metadata || {};
+      const processingResult = await mediaPipeline.processMedia(filePath, req.file.originalname);
+      datasetInfo.metadata = processingResult.data?.metadata || processingResult.metadata || {};
       datasetInfo.processing = {
-        processed: processingResult.processed,
-        thumbnailPath: processingResult.thumbnailPath,
+        processed: processingResult.success || processingResult.processed,
+        thumbnailPath: processingResult.data?.cloudinaryUrl || processingResult.thumbnailPath,
       };
-      datasetInfo.storage = 'file';
+      datasetInfo.storage = 'postgres'; // Media is stored in PostgreSQL media_* tables
     } else if (fileTypeInfo.category === 'json') {
       // JSON pipeline
       const processingResult = await jsonPipeline.processJson(filePath, fileTypeInfo.ext);

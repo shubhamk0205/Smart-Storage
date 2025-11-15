@@ -87,6 +87,20 @@ datasetSchema.index({ category: 1, createdAt: -1 });
 datasetSchema.index({ mimeType: 1 });
 datasetSchema.index({ tags: 1 });
 
-const Dataset = mongoose.model('Dataset', datasetSchema);
+// Lazy model creation - only create when mongoose is connected
+let Dataset = null;
 
-export default Dataset;
+const getDatasetModel = () => {
+  if (!Dataset) {
+    // Check if model already exists
+    if (mongoose.models.Dataset) {
+      Dataset = mongoose.models.Dataset;
+    } else {
+      Dataset = mongoose.model('Dataset', datasetSchema);
+    }
+  }
+  return Dataset;
+};
+
+// Export a getter function that returns the model
+export default getDatasetModel;

@@ -1,6 +1,6 @@
 import catalogService from './catalog.service.js';
 import db from '../config/knex.js';
-import Dataset from './dataset.model.js';
+import mongoose from 'mongoose';
 import logger from '../utils/logger.js';
 
 class RetrievalService {
@@ -109,7 +109,8 @@ class RetrievalService {
     try {
       const { page = 1, limit = 100, where = {}, sort = { _id: 1 } } = options;
       const collectionName = `dataset_${dataset.datasetId}`;
-      const collection = Dataset.db.collection(collectionName);
+      const db = mongoose.connection.db;
+      const collection = db.collection(collectionName);
 
       const records = await collection
         .find(where)
@@ -245,6 +246,76 @@ class RetrievalService {
       return stats;
     } catch (error) {
       logger.error('Error getting dataset stats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unified retrieve method for frontend
+   */
+  async retrieve(params) {
+    try {
+      const { dataset, entity, filter = {}, fields = [], include = {}, limit = 10, offset = 0 } = params;
+      
+      // Get dataset by name
+      const datasets = await catalogService.listDatasets({}, { page: 1, limit: 1000 });
+      const datasetObj = datasets.datasets.find(d => d.originalName === dataset || d.datasetId === dataset);
+      
+      if (!datasetObj) {
+        throw new Error(`Dataset not found: ${dataset}`);
+      }
+
+      // Build query options
+      const options = {
+        page: Math.floor(offset / limit) + 1,
+        limit,
+        where: filter,
+        orderBy: 'id',
+      };
+
+      // Get data
+      let data;
+      if (datasetObj.storage === 'postgres') {
+        const tableName = datasetObj.schema?.tableName || entity;
+        let query = db(tableName);
+        
+        if (Object.keys(filter).length > 0) {
+          query = query.where(filter);
+        }
+        
+        if (fields.length > 0) {
+          query = query.select(fields);
+        } else {
+          query = query.select('*');
+        }
+        
+        query = query.limit(limit).offset(offset);
+        data = await query;
+      } else {
+        const collectionName = `dataset_${datasetObj.datasetId}`;
+        const db = mongoose.connection.db;
+        const collection = db.collection(collectionName);
+        
+        let mongoQuery = collection.find(filter);
+        
+        if (fields.length > 0) {
+          const projection = {};
+          fields.forEach(field => {
+            projection[field] = 1;
+          });
+          mongoQuery = mongoQuery.project(projection);
+        }
+        
+        data = await mongoQuery.limit(limit).skip(offset).toArray();
+        data = data.map(record => {
+          const { _id, _datasetId, _importedAt, ...cleanRecord } = record;
+          return cleanRecord;
+        });
+      }
+
+      return data;
+    } catch (error) {
+      logger.error('Error in retrieve:', error);
       throw error;
     }
   }

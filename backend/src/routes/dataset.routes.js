@@ -10,36 +10,35 @@ const router = express.Router();
  */
 router.get('/', async (req, res, next) => {
   try {
-    const { page, limit, category, sortBy, sortOrder } = req.query;
+    const { page, limit, backend, sortBy, sortOrder } = req.query;
 
     const filters = {};
-    if (category) {
-      filters.category = category;
+    if (backend) {
+      filters.storage = backend === 'sql' ? 'postgres' : 'mongodb';
     }
 
     const options = {
       page: parseInt(page) || 1,
-      limit: parseInt(limit) || 20,
+      limit: parseInt(limit) || 1000,
       sortBy: sortBy || 'createdAt',
       sortOrder: sortOrder || 'desc',
     };
 
     const result = await catalogService.listDatasets(filters, options);
 
-    res.json({
-      success: true,
-      datasets: result.datasets.map(d => ({
-        id: d.datasetId,
-        name: d.originalName,
-        category: d.category,
-        mimeType: d.mimeType,
-        storage: d.storage,
-        recordCount: d.recordCount,
-        fileSize: d.fileSize,
-        createdAt: d.createdAt,
-      })),
-      pagination: result.pagination,
-    });
+    res.json(result.datasets.map(d => ({
+      name: d.originalName,
+      backend: d.storage === 'postgres' ? 'sql' : 'nosql',
+      default_entity: d.schema?.tableName || `dataset_${d.datasetId}`,
+      schema_version: '1.0',
+      created_at: d.createdAt,
+      connection_info: d.storage === 'postgres' 
+        ? { type: 'postgres', table: d.schema?.tableName }
+        : { type: 'mongodb', collection: `dataset_${d.datasetId}` },
+      entities: d.schema?.tableName ? [d.schema.tableName] : [],
+      tables: d.storage === 'postgres' && d.schema?.tableName ? [d.schema.tableName] : [],
+      collections: d.storage === 'mongodb' ? [`dataset_${d.datasetId}`] : [],
+    })));
   } catch (error) {
     logger.error('Error listing datasets:', error);
     next(error);
@@ -47,12 +46,20 @@ router.get('/', async (req, res, next) => {
 });
 
 /**
- * Get dataset metadata
+ * Get dataset metadata by name
  */
-router.get('/:datasetId', async (req, res, next) => {
+router.get('/:name', async (req, res, next) => {
   try {
-    const { datasetId } = req.params;
-    const dataset = await catalogService.getDataset(datasetId);
+    const { name } = req.params;
+    
+    // Try to find by name first
+    const datasets = await catalogService.listDatasets({}, { page: 1, limit: 1000 });
+    let dataset = datasets.datasets.find(d => d.originalName === name);
+    
+    // If not found by name, try by ID
+    if (!dataset) {
+      dataset = await catalogService.getDataset(name);
+    }
 
     if (!dataset) {
       return res.status(404).json({
@@ -62,24 +69,17 @@ router.get('/:datasetId', async (req, res, next) => {
     }
 
     res.json({
-      success: true,
-      dataset: {
-        id: dataset.datasetId,
-        name: dataset.originalName,
-        category: dataset.category,
-        mimeType: dataset.mimeType,
-        extension: dataset.extension,
-        storage: dataset.storage,
-        recordCount: dataset.recordCount,
-        fileSize: dataset.fileSize,
-        metadata: dataset.metadata,
-        schema: dataset.schema,
-        processing: dataset.processing,
-        tags: dataset.tags,
-        description: dataset.description,
-        createdAt: dataset.createdAt,
-        updatedAt: dataset.updatedAt,
-      },
+      name: dataset.originalName,
+      backend: dataset.storage === 'postgres' ? 'sql' : 'nosql',
+      default_entity: dataset.schema?.tableName || `dataset_${dataset.datasetId}`,
+      schema_version: '1.0',
+      created_at: dataset.createdAt,
+      connection_info: dataset.storage === 'postgres' 
+        ? { type: 'postgres', table: dataset.schema?.tableName }
+        : { type: 'mongodb', collection: `dataset_${dataset.datasetId}` },
+      entities: dataset.schema?.tableName ? [dataset.schema.tableName] : [],
+      tables: dataset.storage === 'postgres' && dataset.schema?.tableName ? [dataset.schema.tableName] : [],
+      collections: dataset.storage === 'mongodb' ? [`dataset_${dataset.datasetId}`] : [],
     });
   } catch (error) {
     logger.error('Error getting dataset:', error);

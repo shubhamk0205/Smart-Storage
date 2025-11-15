@@ -9,19 +9,35 @@ const connectMongoDB = async () => {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
-    logger.info('MongoDB connected successfully');
+    
+    // Connection will be logged by the 'connected' event handler below
   } catch (error) {
     logger.error('MongoDB connection error:', error);
     process.exit(1);
   }
 };
 
+// Connection event handlers
+mongoose.connection.on('connected', () => {
+  const dbName = mongoose.connection.name;
+  const host = mongoose.connection.host;
+  const port = mongoose.connection.port;
+  logger.info(`✅ MongoDB connected successfully!`);
+  logger.info(`   Database: ${dbName}`);
+  logger.info(`   Host: ${host}:${port}`);
+  logger.info(`   Connection State: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
+});
+
 mongoose.connection.on('error', (err) => {
-  logger.error('MongoDB connection error:', err);
+  logger.error('❌ MongoDB connection error:', err);
 });
 
 mongoose.connection.on('disconnected', () => {
-  logger.warn('MongoDB disconnected');
+  logger.warn('⚠️  MongoDB disconnected');
+});
+
+mongoose.connection.on('reconnected', () => {
+  logger.info('🔄 MongoDB reconnected successfully');
 });
 
 export default connectMongoDB;
