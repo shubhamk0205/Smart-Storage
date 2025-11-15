@@ -22,12 +22,28 @@ class MetadataService {
         metadata.width = imageMetadata.width;
         metadata.height = imageMetadata.height;
         
-        // Try to extract EXIF
-        try {
-          const exif = await sharp(filePath).exif();
-          metadata.exif = exif;
-        } catch (error) {
-          logger.warn('Could not extract EXIF data:', error);
+        // EXIF data is included in the metadata object (if available)
+        // Sharp's metadata() method returns an object that may contain 'exif' property
+        // The 'exif' property is a Buffer containing raw EXIF data
+        if (imageMetadata.exif) {
+          // Convert Buffer to base64 string for JSON storage, or keep as Buffer
+          // For JSON storage, we'll convert to base64
+          if (Buffer.isBuffer(imageMetadata.exif)) {
+            metadata.exif = {
+              raw: imageMetadata.exif.toString('base64'),
+              hasExif: true,
+            };
+          } else {
+            metadata.exif = imageMetadata.exif;
+          }
+        }
+        
+        // Also store orientation if available (part of EXIF)
+        if (imageMetadata.orientation) {
+          if (!metadata.exif) {
+            metadata.exif = {};
+          }
+          metadata.exif.orientation = imageMetadata.orientation;
         }
       } else if (category === 'video' || category === 'audio') {
         return new Promise((resolve, reject) => {
