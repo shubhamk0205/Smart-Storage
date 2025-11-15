@@ -133,6 +133,21 @@ const startServer = async () => {
       logger.info(`Environment: ${appConfig.env}`);
     });
 
+    // Handle server errors (e.g., port already in use)
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`❌ Port ${appConfig.port} is already in use!`);
+        logger.error(`   Please either:`);
+        logger.error(`   1. Stop the process using port ${appConfig.port}`);
+        logger.error(`   2. Change the PORT in your .env file`);
+        logger.error(`   3. Kill the process: taskkill /F /PID <process_id>`);
+        logger.error(`   Find process: netstat -ano | findstr :${appConfig.port}`);
+      } else {
+        logger.error('❌ Server error:', error);
+      }
+      process.exit(1);
+    });
+
     // Graceful shutdown
     const gracefulShutdown = async () => {
       logger.info('Received shutdown signal, closing server...');

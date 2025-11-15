@@ -19,16 +19,16 @@ if (process.env.DATABASE_URL) {
   console.warn('⚠️  DATABASE_URL not found - will use fallback connection');
 }
 
-// Helper function to parse DATABASE_URL and create connection config with IPv6 support
+// Helper function to parse DATABASE_URL and create connection config
 const parseDatabaseUrl = (url) => {
   if (!url) return null;
   
   try {
     const dbUrl = new URL(url);
     const isSupabase = url.includes('supabase.co');
+    const isDocker = url.includes('localhost') || url.includes('127.0.0.1');
     
     // For Supabase, use connection object with IPv6 family
-    // Note: If IPv6 fails, try removing family: 6 to allow IPv4 fallback
     if (isSupabase) {
       return {
         host: dbUrl.hostname,
@@ -37,9 +37,19 @@ const parseDatabaseUrl = (url) => {
         user: dbUrl.username || 'postgres',
         password: dbUrl.password || '',
         ssl: { rejectUnauthorized: false },
-        // Try IPv6 first, but allow fallback to IPv4 if needed
-        // If you get ENOTFOUND errors, try removing family: 6
         family: process.env.FORCE_IPV4 !== 'true' ? 6 : undefined, // Force IPv6 unless explicitly disabled
+      };
+    }
+    
+    // For Docker/local connections, use connection object (no SSL needed)
+    if (isDocker) {
+      return {
+        host: dbUrl.hostname,
+        port: parseInt(dbUrl.port) || 5432,
+        database: dbUrl.pathname.slice(1) || 'smart_storage',
+        user: dbUrl.username || 'postgres',
+        password: dbUrl.password || '',
+        ssl: false,
       };
     }
     
