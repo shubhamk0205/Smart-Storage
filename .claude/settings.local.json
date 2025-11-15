@@ -3,7 +3,12 @@
     "allow": [
       "Bash(dir:*)",
       "Bash(mkdir:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(brew services start:*)",
+      "Bash(brew services:*)",
+      "Bash(psql:*)",
+      "Bash(brew list:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,45 +1,79 @@
-import sharp from 'sharp';
-import ffmpeg from 'fluent-ffmpeg';
-import path from 'path';
-import fs from 'fs/promises';
+import fileTypeService from './file-type.service.js';
+import storageService from '../media/storage.js';
+import mediaModel from '../media/media.model.js';
 import logger from '../utils/logger.js';
-import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
 
 class MediaPipelineService {
-  constructor() {
-    this.processedDir = path.join(process.cwd(), 'uploads', 'processed');
-    this.thumbnailDir = path.join(process.cwd(), 'uploads', 'thumbnails');
-    this.initDirectories();
-  }
-
-  async initDirectories() {
-    try {
-      await fs.mkdir(this.processedDir, { recursive: true });
-      await fs.mkdir(this.thumbnailDir, { recursive: true });
-    } catch (error) {
-      logger.error('Error creating directories:', error);
-    }
-  }
-
   /**
-   * Process media file based on type
+   * Process media file
+   * 1. Detect specific file type (jpg, png, mp4, etc.)
+   * 2. Create table for this type if it doesn't exist
+   * 3. Upload to Cloudinary
+   * 4. Save metadata and URL to PostgreSQL table
    * @param {string} filePath - Path to the uploaded file
-   * @param {string} category - File category (image, video, audio)
+   * @param {string} originalFilename - Original filename
    * @returns {Promise<Object>} Processing results
    */
-  async processMedia(filePath, category) {
+  async processMedia(filePath, originalFilename) {
     try {
-      switch (category) {
-        case 'image':
-          return await this.processImage(filePath);
-        case 'video':
-          return await this.processVideo(filePath);
-        case 'audio':
-          return await this.processAudio(filePath);
-        default:
-          logger.warn(`No processing pipeline for category: ${category}`);
-          return { processed: false };
-      }
+      logger.info(`Processing media file: ${originalFilename}`);
+
+      // Step 1: Detect specific file type using file-type library
+      const fileTypeInfo = await fileTypeService.detectFromFile(filePath);
+      const { mime: mimeType, ext, category } = fileTypeInfo;
+
+      logger.info(`Detected file type - MIME: ${mimeType}, Extension: ${ext}, Category: ${category}`);
+
+      // Step 2: Create table for this extension if it doesn't exist
+      await mediaModel.createTableIfNotExists(ext, mimeType);
+
+      // Step 3: Upload to Cloudinary
+      const resourceType = storageService.getCloudinaryResourceType(category);
+      const cloudinaryResult = await storageService.uploadToCloudinary(
+        filePath,
+        resourceType,
+        `smart-storage/${category}`
+      );
+
+      // Step 4: Save metadata to PostgreSQL table
+      const mediaData = {
+        originalFilename: originalFilename,
+        cloudinaryUrl: cloudinaryResult.url,
+        cloudinaryPublicId: cloudinaryResult.publicId,
+        mimeType: mimeType,
+        extension: ext,
+        fileSize: cloudinaryResult.bytes,
+        width: cloudinaryResult.width,
+        height: cloudinaryResult.height,
+        duration: cloudinaryResult.duration,
+        metadata: {
+          format: cloudinaryResult.format,
+          resourceType: cloudinaryResult.resourceType,
+        },
+      };
+
+      const record = await mediaModel.insertMedia(ext, mediaData);
+
+      logger.info(`Media processing complete for ${originalFilename}`);
+
+      return {
+        success: true,
+        message: 'Media processed successfully',
+        data: {
+          id: record.id,
+          tableName: mediaModel.getTableName(ext),
+          extension: ext,
+          mimeType: mimeType,
+          category: category,
+          cloudinaryUrl: cloudinaryResult.url,
+          fileSize: cloudinaryResult.bytes,
+          width: cloudinaryResult.width,
+          height: cloudinaryResult.height,
+          duration: cloudinaryResult.duration,
+          createdAt: record.created_at,
+        },
+      };
     } catch (error) {
       logger.error('Error processing media:', error);
       throw error;
@@ -47,150 +81,32 @@ class MediaPipelineService {
   }
 
   /**
-   * Process image file
-   * @param {string} filePath - Path to the image file
-   * @returns {Promise<Object>} Processing results
+   * Get all media types that have been stored
+   * @returns {Promise<Array>} Array of media types
    */
-  async processImage(filePath) {
+  async getAllMediaTypes() {
     try {
-      const image = sharp(filePath);
-      const metadata = await image.metadata();
-
-      // Generate thumbnail
-      const thumbnailPath = path.join(
-        this.thumbnailDir,
-        `thumb_${path.basename(filePath)}`
-      );
-
-      await sharp(filePath)
-        .resize(300, 300, { fit: 'inside' })
-        .toFile(thumbnailPath);
-
-      logger.info(`Image processed: ${filePath}`);
-
-      return {
-        processed: true,
-        metadata: {
-          width: metadata.width,
-          height: metadata.height,
-          format: metadata.format,
-          space: metadata.space,
-          channels: metadata.channels,
-          hasAlpha: metadata.hasAlpha,
-        },
-        thumbnailPath,
-      };
+      return await mediaModel.getAllMediaTypes();
     } catch (error) {
-      logger.error('Error processing image:', error);
+      logger.error('Error fetching all media types:', error);
       throw error;
     }
   }
 
   /**
-   * Process video file
-   * @param {string} filePath - Path to the video file
-   * @returns {Promise<Object>} Processing results
+   * Get media files by type
+   * @param {string} ext - File extension
+   * @param {number} limit - Number of records
+   * @param {number} offset - Offset for pagination
+   * @returns {Promise<Array>} Array of media records
    */
-  async processVideo(filePath) {
-    return new Promise((resolve, reject) => {
-      const thumbnailPath = path.join(
-        this.thumbnailDir,
-        `thumb_${path.basename(filePath, path.extname(filePath))}.jpg`
-      );
-
-      ffmpeg.ffprobe(filePath, (err, metadata) => {
-        if (err) {
-          logger.error('Error probing video:', err);
-          return reject(err);
-        }
-
-        // Generate thumbnail at 1 second
-        ffmpeg(filePath)
-          .screenshots({
-            timestamps: ['1'],
-            filename: path.basename(thumbnailPath),
-            folder: this.thumbnailDir,
-            size: '300x300',
-          })
-          .on('end', () => {
-            logger.info(`Video processed: ${filePath}`);
-
-            const videoStream = metadata.streams.find(s => s.codec_type === 'video');
-            const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
-
-            resolve({
-              processed: true,
-              metadata: {
-                duration: metadata.format.duration,
-                format: metadata.format.format_name,
-                size: metadata.format.size,
-                bitRate: metadata.format.bit_rate,
-                video: videoStream ? {
-                  codec: videoStream.codec_name,
-                  width: videoStream.width,
-                  height: videoStream.height,
-                  frameRate: videoStream.r_frame_rate,
-                } : null,
-                audio: audioStream ? {
-                  codec: audioStream.codec_name,
-                  sampleRate: audioStream.sample_rate,
-                  channels: audioStream.channels,
-                } : null,
-              },
-              thumbnailPath,
-            });
-          })
-          .on('error', (error) => {
-            logger.error('Error generating video thumbnail:', error);
-            // Resolve without thumbnail if screenshot fails
-            resolve({
-              processed: true,
-              metadata: {
-                duration: metadata.format.duration,
-                format: metadata.format.format_name,
-                size: metadata.format.size,
-              },
-              thumbnailPath: null,
-            });
-          });
-      });
-    });
-  }
-
-  /**
-   * Process audio file
-   * @param {string} filePath - Path to the audio file
-   * @returns {Promise<Object>} Processing results
-   */
-  async processAudio(filePath) {
-    return new Promise((resolve, reject) => {
-      ffmpeg.ffprobe(filePath, (err, metadata) => {
-        if (err) {
-          logger.error('Error probing audio:', err);
-          return reject(err);
-        }
-
-        const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
-
-        logger.info(`Audio processed: ${filePath}`);
-
-        resolve({
-          processed: true,
-          metadata: {
-            duration: metadata.format.duration,
-            format: metadata.format.format_name,
-            size: metadata.format.size,
-            bitRate: metadata.format.bit_rate,
-            audio: audioStream ? {
-              codec: audioStream.codec_name,
-              sampleRate: audioStream.sample_rate,
-              channels: audioStream.channels,
-              bitRate: audioStream.bit_rate,
-            } : null,
-          },
-        });
-      });
-    });
+  async getMediaByType(ext, limit = 50, offset = 0) {
+    try {
+      return await mediaModel.getMediaByType(ext, limit, offset);
+    } catch (error) {
+      logger.error(`Error fetching media by type ${ext}:`, error);
+      throw error;
+    }
   }
 }
 
