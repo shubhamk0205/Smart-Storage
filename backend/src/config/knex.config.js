@@ -10,12 +10,13 @@ const __dirname = dirname(__filename);
 const config = {
   development: {
     client: 'pg',
-    connection: {
+    connection: process.env.DATABASE_URL || {
       host: process.env.PG_HOST || 'localhost',
       port: parseInt(process.env.PG_PORT) || 5432,
       database: process.env.PG_DATABASE || 'smart_storage',
       user: process.env.PG_USER || 'postgres',
       password: process.env.PG_PASSWORD || 'postgres',
+      ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false,
     },
     pool: {
       min: 2,
@@ -28,7 +29,7 @@ const config = {
   },
   production: {
     client: 'pg',
-    connection: {
+    connection: process.env.DATABASE_URL || {
       host: process.env.PG_HOST,
       port: parseInt(process.env.PG_PORT),
       database: process.env.PG_DATABASE,
