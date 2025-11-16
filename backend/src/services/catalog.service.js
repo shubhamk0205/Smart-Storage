@@ -130,12 +130,14 @@ class CatalogService {
    * @returns {Promise<Object>} Dataset information
    */
   async getDataset(datasetId) {
+    const startTime = performance.now();
     try {
       // Check cache first
       const cacheKey = cacheService.generateDatasetKey(datasetId);
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug(`Cache HIT: ${cacheKey}`);
+        const duration = (performance.now() - startTime).toFixed(2);
+        logger.info(`✅ Cache HIT: ${cacheKey} (${duration}ms)`);
         return cached;
       }
       
@@ -187,9 +189,13 @@ class CatalogService {
         await cacheService.set(cacheKey, dataset, ttl);
       }
       
+      const duration = (performance.now() - startTime).toFixed(2);
+      logger.info(`⏱️  getDataset(${datasetId}): ${duration}ms (DB query)`);
+      
       return dataset;
     } catch (error) {
-      logger.error('Error fetching dataset:', error);
+      const duration = (performance.now() - startTime).toFixed(2);
+      logger.error(`❌ Error fetching dataset (${duration}ms):`, error);
       throw error;
     }
   }
@@ -201,12 +207,14 @@ class CatalogService {
    * @returns {Promise<Array>} List of datasets
    */
   async listDatasets(filters = {}, options = {}) {
+    const startTime = performance.now();
     try {
       // Check cache first
       const cacheKey = cacheService.generateListKey(filters, options);
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug(`Cache HIT: ${cacheKey}`);
+        const duration = (performance.now() - startTime).toFixed(2);
+        logger.info(`✅ Cache HIT: ${cacheKey} (${duration}ms)`);
         return cached;
       }
       
@@ -306,9 +314,15 @@ class CatalogService {
       const ttl = appConfig.cache?.ttl?.list || 300;
       await cacheService.set(cacheKey, result, ttl);
       
+      const duration = (performance.now() - startTime).toFixed(2);
+      const filterStr = JSON.stringify(filters);
+      const optionsStr = `page=${options.page || 1}, limit=${options.limit || 20}`;
+      logger.info(`⏱️  listDatasets(${filterStr}, ${optionsStr}): ${duration}ms (DB query)`);
+      
       return result;
     } catch (error) {
-      logger.error('Error listing datasets:', error);
+      const duration = (performance.now() - startTime).toFixed(2);
+      logger.error(`❌ Error listing datasets (${duration}ms):`, error);
       throw error;
     }
   }
@@ -585,12 +599,14 @@ class CatalogService {
    * @returns {Promise<Array>} Matching datasets
    */
   async searchDatasets(keyword) {
+    const startTime = performance.now();
     try {
       // Check cache first
       const cacheKey = cacheService.generateSearchKey(keyword);
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug(`Cache HIT: ${cacheKey}`);
+        const duration = (performance.now() - startTime).toFixed(2);
+        logger.info(`✅ Cache HIT: ${cacheKey} (${duration}ms)`);
         return cached;
       }
       
@@ -651,9 +667,13 @@ class CatalogService {
       const ttl = appConfig.cache?.ttl?.search || 300;
       await cacheService.set(cacheKey, allDatasets, ttl);
 
+      const duration = (performance.now() - startTime).toFixed(2);
+      logger.info(`⏱️  searchDatasets("${keyword}"): ${duration}ms (DB query, found ${allDatasets.length} results)`);
+
       return allDatasets;
     } catch (error) {
-      logger.error('Error searching datasets:', error);
+      const duration = (performance.now() - startTime).toFixed(2);
+      logger.error(`❌ Error searching datasets (${duration}ms):`, error);
       throw error;
     }
   }
