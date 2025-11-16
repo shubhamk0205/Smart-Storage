@@ -253,6 +253,43 @@ class CacheService {
     logger.info(`Cache invalidation complete: ${totalDeleted} key(s) deleted`);
     return totalDeleted;
   }
+
+  /**
+   * Clear all cache keys (use with caution!)
+   * @param {string} pattern - Optional pattern to match (default: 'dataset:*' and 'datasets:*')
+   * @returns {Promise<number>} Total number of keys deleted
+   */
+  async clearAll(pattern = null) {
+    if (!this.isEnabled()) {
+      logger.warn('Cache is disabled, nothing to clear');
+      return 0;
+    }
+
+    try {
+      const redis = getRedis();
+      if (!redis) {
+        logger.warn('Redis not available, nothing to clear');
+        return 0;
+      }
+
+      let totalDeleted = 0;
+
+      if (pattern) {
+        // Clear specific pattern
+        totalDeleted = await this.delPattern(pattern);
+      } else {
+        // Clear all dataset-related caches
+        totalDeleted += await this.delPattern('dataset:*');
+        totalDeleted += await this.delPattern('datasets:*');
+      }
+
+      logger.info(`🗑️  Cache cleared: ${totalDeleted} key(s) deleted`);
+      return totalDeleted;
+    } catch (error) {
+      logger.error('Error clearing cache:', error);
+      throw error;
+    }
+  }
 }
 
 export default new CacheService();
