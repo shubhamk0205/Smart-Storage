@@ -3,6 +3,7 @@ import db from '../config/knex.js';
 import logger from '../utils/logger.js';
 import schemaGenerator from './schema-generator.service.js';
 import jsonPipeline from './json-pipeline.service.js';
+import { appConfig } from '../config/app.config.js';
 
 // Ensure dataset_catalog table exists in PostgreSQL
 const ensurePostgresCatalogTable = async () => {
@@ -415,11 +416,26 @@ class CatalogService {
       );
 
       if (flattenedData.length > 0) {
-        await db(tableName).insert(flattenedData);
+        // Batch insert for large datasets to avoid memory issues and improve performance
+        const BATCH_SIZE = appConfig.database?.batchSize || 1000;
+        let totalInserted = 0;
+        
+        for (let i = 0; i < flattenedData.length; i += BATCH_SIZE) {
+          const batch = flattenedData.slice(i, i + BATCH_SIZE);
+          await db(tableName).insert(batch);
+          totalInserted += batch.length;
+          
+          // Log progress for large datasets
+          if (flattenedData.length > BATCH_SIZE) {
+            logger.debug(`Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(flattenedData.length / BATCH_SIZE)} (${totalInserted}/${flattenedData.length} records)`);
+          }
+        }
+        
+        logger.info(`Stored ${totalInserted} record(s) in table: ${tableName} (in ${Math.ceil(flattenedData.length / BATCH_SIZE)} batch(es))`);
+        return totalInserted;
       }
 
-      logger.info(`Stored ${flattenedData.length} record(s) in table: ${tableName}`);
-      return flattenedData.length;
+      return 0;
     } catch (error) {
       logger.error('Error storing data in PostgreSQL:', error);
       throw error;
@@ -459,10 +475,30 @@ class CatalogService {
         throw new Error(`Invalid data type for MongoDB storage: ${typeof data}. Expected array or object.`);
       }
 
-      const result = await collection.insertMany(documents);
+      // Batch insert for large datasets to avoid memory issues and improve performance
+      const BATCH_SIZE = appConfig.database?.mongoBatchSize || 1000;
+      let totalInserted = 0;
+      
+      if (documents.length <= BATCH_SIZE) {
+        // Small dataset - insert all at once
+        const result = await collection.insertMany(documents);
+        totalInserted = result.insertedCount;
+      } else {
+        // Large dataset - insert in batches
+        for (let i = 0; i < documents.length; i += BATCH_SIZE) {
+          const batch = documents.slice(i, i + BATCH_SIZE);
+          const result = await collection.insertMany(batch, {
+            ordered: false,  // Continue on error for better performance
+          });
+          totalInserted += result.insertedCount;
+          
+          // Log progress for large datasets
+          logger.debug(`Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(documents.length / BATCH_SIZE)} (${totalInserted}/${documents.length} documents)`);
+        }
+      }
 
-      logger.info(`Stored ${result.insertedCount} record(s) in collection: ${collectionName}`);
-      return result.insertedCount;
+      logger.info(`Stored ${totalInserted} record(s) in collection: ${collectionName}${documents.length > BATCH_SIZE ? ` (in ${Math.ceil(documents.length / BATCH_SIZE)} batch(es))` : ''}`);
+      return totalInserted;
     } catch (error) {
       logger.error('Error storing data in MongoDB:', error);
       throw error;

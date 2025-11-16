@@ -15,6 +15,12 @@ export const appConfig = {
   upload: {
     dir: process.env.UPLOAD_DIR || './uploads',
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 104857600, // 100MB
+    maxFilesPerBatch: parseInt(process.env.MAX_FILES_PER_BATCH) || 20,
+    maxTotalSize: parseInt(process.env.MAX_TOTAL_SIZE_MB) * 1024 * 1024 || 524288000, // 500MB
+  },
+  database: {
+    batchSize: parseInt(process.env.DB_BATCH_SIZE) || 1000, // Records per batch insert
+    mongoBatchSize: parseInt(process.env.MONGO_BATCH_SIZE) || 1000, // Documents per batch insert
   },
   logging: {
     level: process.env.LOG_LEVEL || 'info',
