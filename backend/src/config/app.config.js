@@ -22,6 +22,10 @@ export const appConfig = {
     batchSize: parseInt(process.env.DB_BATCH_SIZE) || 1000, // Records per batch insert
     mongoBatchSize: parseInt(process.env.MONGO_BATCH_SIZE) || 1000, // Documents per batch insert
   },
+  json: {
+    streamingThreshold: parseInt(process.env.JSON_STREAMING_THRESHOLD) || 10485760, // 10MB - use streaming for files larger than this
+    streamingBatchSize: parseInt(process.env.JSON_STREAMING_BATCH_SIZE) || 10000, // Process in chunks during streaming
+  },
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     filePath: process.env.LOG_FILE_PATH || './logs',

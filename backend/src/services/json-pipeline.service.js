@@ -1,7 +1,12 @@
 import fs from 'fs/promises';
+import { statSync } from 'fs';
 import ndjson from 'ndjson';
 import { createReadStream } from 'fs';
+import { parse } from 'stream-json';
+import { streamArray } from 'stream-json/streamers/StreamArray.js';
+import { streamObject } from 'stream-json/streamers/StreamObject.js';
 import logger from '../utils/logger.js';
+import { appConfig } from '../config/app.config.js';
 
 class JsonPipelineService {
   /**
@@ -25,29 +30,24 @@ class JsonPipelineService {
 
   /**
    * Process standard JSON file
+   * Uses streaming for large files to avoid memory issues
    * @param {string} filePath - Path to the JSON file
    * @returns {Promise<Object>} Processing results
    */
   async processJsonFile(filePath) {
     try {
-      const content = await fs.readFile(filePath, 'utf8');
+      // Check file size to decide between streaming and in-memory parsing
+      const stats = statSync(filePath);
+      const fileSize = stats.size;
+      const streamingThreshold = appConfig.json?.streamingThreshold || 10485760; // 10MB default
       
-      // Validate JSON before parsing
-      this.validateJsonSyntax(content, filePath);
-      
-      const data = JSON.parse(content);
-
-      const analysis = this.analyzeJsonStructure(data);
-
-      logger.info(`JSON file processed: ${filePath}`);
-
-      return {
-        processed: true,
-        dataType: 'json',
-        recordCount: Array.isArray(data) ? data.length : 1,
-        data: data,
-        analysis,
-      };
+      if (fileSize > streamingThreshold) {
+        logger.info(`Large JSON file detected (${(fileSize / 1024 / 1024).toFixed(2)}MB), using streaming parser: ${filePath}`);
+        return await this.processJsonFileStreaming(filePath);
+      } else {
+        logger.debug(`Small JSON file (${(fileSize / 1024 / 1024).toFixed(2)}MB), using in-memory parser: ${filePath}`);
+        return await this.processJsonFileInMemory(filePath);
+      }
     } catch (error) {
       logger.error('Error processing JSON file:', error);
       
@@ -65,6 +65,237 @@ class JsonPipelineService {
       
       throw error;
     }
+  }
+
+  /**
+   * Process JSON file using in-memory parsing (for small files)
+   * @param {string} filePath - Path to the JSON file
+   * @returns {Promise<Object>} Processing results
+   */
+  async processJsonFileInMemory(filePath) {
+    const content = await fs.readFile(filePath, 'utf8');
+    
+    // Validate JSON before parsing
+    this.validateJsonSyntax(content, filePath);
+    
+    const data = JSON.parse(content);
+
+    const analysis = this.analyzeJsonStructure(data);
+
+    logger.info(`JSON file processed (in-memory): ${filePath}`);
+
+    return {
+      processed: true,
+      dataType: 'json',
+      recordCount: Array.isArray(data) ? data.length : 1,
+      data: data,
+      analysis,
+    };
+  }
+
+  /**
+   * Process JSON file using streaming (for large files)
+   * @param {string} filePath - Path to the JSON file
+   * @returns {Promise<Object>} Processing results
+   */
+  async processJsonFileStreaming(filePath) {
+    return new Promise((resolve, reject) => {
+      // First, peek at the first character to determine if it's an array or object
+      const peekStream = createReadStream(filePath, { encoding: 'utf8', start: 0, end: 1 });
+      let firstChar = '';
+      
+      peekStream.on('data', (chunk) => {
+        firstChar = chunk.trim()[0];
+      });
+      
+      peekStream.on('end', () => {
+        const isArray = firstChar === '[';
+        const isObject = firstChar === '{';
+        
+        if (!isArray && !isObject) {
+          reject(new Error(`Invalid JSON format: Expected '[' or '{' at start of file, got '${firstChar}'`));
+          return;
+        }
+        
+        if (isArray) {
+          this.streamJsonArray(filePath, resolve, reject);
+        } else {
+          this.streamJsonObject(filePath, resolve, reject);
+        }
+      });
+      
+      peekStream.on('error', (error) => {
+        reject(new Error(`Error reading file: ${error.message}`));
+      });
+    });
+  }
+
+  /**
+   * Stream a JSON array file
+   * @param {string} filePath - Path to the JSON file
+   * @param {Function} resolve - Promise resolve function
+   * @param {Function} reject - Promise reject function
+   */
+  streamJsonArray(filePath, resolve, reject) {
+    const records = [];
+    let fieldTypes = {};
+    let recordCount = 0;
+    let firstChunk = true;
+    const streamingBatchSize = appConfig.json?.streamingBatchSize || 10000;
+
+    createReadStream(filePath, { encoding: 'utf8' })
+      .pipe(parse())
+      .pipe(streamArray())
+      .on('data', ({ value }) => {
+        if (firstChunk) {
+          firstChunk = false;
+          logger.debug('Detected JSON array, streaming records...');
+        }
+        
+        records.push(value);
+        recordCount++;
+        
+        // Analyze fields on-the-fly (sample first 100 records for schema)
+        if (recordCount <= 100) {
+          const sampleFields = this.extractFields([value]);
+          fieldTypes = this.mergeFieldTypes(fieldTypes, sampleFields);
+        }
+        
+        // Log progress for very large datasets
+        if (recordCount % streamingBatchSize === 0) {
+          logger.debug(`Streamed ${recordCount} records so far...`);
+        }
+      })
+      .on('end', () => {
+        // Finalize field analysis with all records if needed
+        if (recordCount > 100) {
+          const finalSample = records.slice(0, Math.min(100, records.length));
+          fieldTypes = this.extractFields(finalSample);
+        } else {
+          fieldTypes = this.extractFields(records);
+        }
+        
+        const analysis = {
+          type: 'array',
+          itemCount: recordCount,
+          fields: fieldTypes,
+        };
+
+        logger.info(`JSON file processed (streaming): ${filePath}, records: ${recordCount}`);
+
+        resolve({
+          processed: true,
+          dataType: 'json',
+          recordCount,
+          data: records,
+          analysis,
+        });
+      })
+      .on('error', (error) => {
+        logger.error('Error in stream array processing:', error);
+        reject(error);
+      });
+  }
+
+  /**
+   * Stream a JSON object file
+   * @param {string} filePath - Path to the JSON file
+   * @param {Function} resolve - Promise resolve function
+   * @param {Function} reject - Promise reject function
+   */
+  streamJsonObject(filePath, resolve, reject) {
+    const rootObject = {};
+    let fieldTypes = {};
+    let firstChunk = true;
+
+    createReadStream(filePath, { encoding: 'utf8' })
+      .pipe(parse())
+      .pipe(streamObject())
+      .on('data', ({ key, value }) => {
+        if (firstChunk) {
+          firstChunk = false;
+          logger.debug('Detected JSON object, streaming properties...');
+        }
+        
+        rootObject[key] = value;
+        
+        // If value is an array, analyze it
+        if (Array.isArray(value) && value.length > 0) {
+          const sampleFields = this.extractFields(value.slice(0, Math.min(10, value.length)));
+          if (!fieldTypes[key]) {
+            fieldTypes[key] = sampleFields;
+          } else {
+            fieldTypes[key] = this.mergeFieldTypes(fieldTypes[key], sampleFields);
+          }
+        }
+      })
+      .on('end', () => {
+        // Analyze the root object structure
+        fieldTypes = this.extractFields([rootObject]);
+        
+        const analysis = {
+          type: 'object',
+          fields: fieldTypes,
+        };
+
+        logger.info(`JSON file processed (streaming): ${filePath}, object with ${Object.keys(rootObject).length} top-level keys`);
+
+        resolve({
+          processed: true,
+          dataType: 'json',
+          recordCount: 1,
+          data: rootObject,
+          analysis,
+        });
+      })
+      .on('error', (error) => {
+        logger.error('Error in stream object processing:', error);
+        reject(error);
+      });
+  }
+
+  /**
+   * Merge field types from multiple samples
+   * @param {Object} existing - Existing field types
+   * @param {Object} newFields - New field types to merge
+   * @returns {Object} Merged field types
+   */
+  mergeFieldTypes(existing, newFields) {
+    const merged = { ...existing };
+    
+    for (const [key, fieldInfo] of Object.entries(newFields)) {
+      if (!merged[key]) {
+        merged[key] = {
+          types: [...fieldInfo.types],
+          nullable: fieldInfo.nullable,
+          nested: fieldInfo.nested,
+          nestedFields: fieldInfo.nestedFields,
+        };
+      } else {
+        // Merge types
+        const existingTypes = new Set(merged[key].types);
+        fieldInfo.types.forEach(t => existingTypes.add(t));
+        merged[key].types = Array.from(existingTypes);
+        
+        // Update nullable if new field is nullable
+        if (fieldInfo.nullable) {
+          merged[key].nullable = true;
+        }
+        
+        // Update nested if new field is nested
+        if (fieldInfo.nested) {
+          merged[key].nested = true;
+          if (fieldInfo.nestedFields) {
+            merged[key].nestedFields = this.mergeFieldTypes(
+              merged[key].nestedFields || {},
+              fieldInfo.nestedFields
+            );
+          }
+        }
+      }
+    }
+    
+    return merged;
   }
 
   /**
