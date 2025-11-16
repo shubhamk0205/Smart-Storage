@@ -34,4 +34,20 @@ export const appConfig = {
     windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS) || 900000, // 15 minutes
     max: parseInt(process.env.API_RATE_LIMIT_MAX_REQUESTS) || 100,
   },
+  cache: {
+    enabled: process.env.CACHE_ENABLED === 'true',
+    redis: {
+      url: process.env.REDIS_URL,
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+      db: parseInt(process.env.REDIS_DB) || 0,
+    },
+    ttl: {
+      dataset: parseInt(process.env.CACHE_DATASET_TTL) || 3600, // 1 hour
+      list: parseInt(process.env.CACHE_LIST_TTL) || 300, // 5 minutes
+      search: parseInt(process.env.CACHE_SEARCH_TTL) || 300, // 5 minutes
+      stats: parseInt(process.env.CACHE_STATS_TTL) || 900, // 15 minutes
+    },
+  },
 };

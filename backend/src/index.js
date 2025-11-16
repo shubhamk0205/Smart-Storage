@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { appConfig } from './config/app.config.js';
 import connectMongoDB from './config/mongoose.js';
+import { initRedis, closeRedis } from './config/redis.config.js';
 import logger from './utils/logger.js';
 import routes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
@@ -96,6 +97,13 @@ const startServer = async () => {
     
     logger.info('✅ MongoDB connection verified and ready for model operations');
     // MongoDB connection success is logged in mongoose.js connection event handler
+
+    // Initialize Redis cache (optional - server can run without it)
+    try {
+      await initRedis();
+    } catch (error) {
+      logger.warn('⚠️  Redis initialization failed (caching disabled):', error.message);
+    }
 
     // Test PostgreSQL connection (optional - server can run without it)
     let db = null;
@@ -194,6 +202,8 @@ const startServer = async () => {
           }
           await import('mongoose').then(m => m.default.connection.close());
           logger.info('MongoDB connection closed');
+          await closeRedis();
+          logger.info('Redis connection closed');
           process.exit(0);
         } catch (error) {
           logger.error('Error during shutdown:', error);

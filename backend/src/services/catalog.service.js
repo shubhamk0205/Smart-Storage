@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import schemaGenerator from './schema-generator.service.js';
 import jsonPipeline from './json-pipeline.service.js';
 import { appConfig } from '../config/app.config.js';
+import cacheService from './cache.service.js';
 
 // Ensure dataset_catalog table exists in PostgreSQL
 const ensurePostgresCatalogTable = async () => {
@@ -98,6 +99,10 @@ class CatalogService {
         };
         
         logger.info(`Dataset cataloged in PostgreSQL: ${dataset.datasetId}`);
+        
+        // Invalidate cache after creating dataset
+        await cacheService.invalidateAll(dataset.datasetId);
+        
         return dataset;
       } 
       // NoSQL datasets go to MongoDB catalog
@@ -107,6 +112,10 @@ class CatalogService {
         await dataset.save();
 
         logger.info(`Dataset cataloged in MongoDB: ${dataset.datasetId}`);
+        
+        // Invalidate cache after creating dataset
+        await cacheService.invalidateAll(dataset.datasetId);
+        
         return dataset;
       }
     } catch (error) {
@@ -122,6 +131,19 @@ class CatalogService {
    */
   async getDataset(datasetId) {
     try {
+      // Check cache first
+      const cacheKey = cacheService.generateDatasetKey(datasetId);
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        logger.debug(`Cache HIT: ${cacheKey}`);
+        return cached;
+      }
+      
+      logger.debug(`Cache MISS: ${cacheKey}`);
+      
+      // Fetch from database
+      let dataset = null;
+      
       // Try PostgreSQL first (SQL datasets)
       try {
         const record = await db('dataset_catalog')
@@ -129,7 +151,7 @@ class CatalogService {
           .first();
         
         if (record) {
-          return {
+          dataset = {
             datasetId: record.dataset_id,
             originalName: record.original_name,
             filePath: record.file_path,
@@ -153,9 +175,18 @@ class CatalogService {
         logger.debug('PostgreSQL catalog lookup failed, trying MongoDB:', pgError.message);
       }
       
-      // Try MongoDB (NoSQL datasets)
-      const DatasetModel = await Dataset(); // Wait for model to be ready
-      const dataset = await DatasetModel.findOne({ datasetId });
+      // Try MongoDB (NoSQL datasets) if not found in PostgreSQL
+      if (!dataset) {
+        const DatasetModel = await Dataset(); // Wait for model to be ready
+        dataset = await DatasetModel.findOne({ datasetId });
+      }
+      
+      // Store in cache if found
+      if (dataset) {
+        const ttl = appConfig.cache?.ttl?.dataset || 3600;
+        await cacheService.set(cacheKey, dataset, ttl);
+      }
+      
       return dataset;
     } catch (error) {
       logger.error('Error fetching dataset:', error);
@@ -171,6 +202,16 @@ class CatalogService {
    */
   async listDatasets(filters = {}, options = {}) {
     try {
+      // Check cache first
+      const cacheKey = cacheService.generateListKey(filters, options);
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        logger.debug(`Cache HIT: ${cacheKey}`);
+        return cached;
+      }
+      
+      logger.debug(`Cache MISS: ${cacheKey}`);
+      
       const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = options;
       const allDatasets = [];
       
@@ -251,7 +292,7 @@ class CatalogService {
       // Apply pagination to combined results
       const paginatedDatasets = allDatasets.slice((page - 1) * limit, page * limit);
       
-      return {
+      const result = {
         datasets: paginatedDatasets,
         pagination: {
           page,
@@ -260,6 +301,12 @@ class CatalogService {
           pages: Math.ceil(allDatasets.length / limit),
         },
       };
+      
+      // Store in cache
+      const ttl = appConfig.cache?.ttl?.list || 300;
+      await cacheService.set(cacheKey, result, ttl);
+      
+      return result;
     } catch (error) {
       logger.error('Error listing datasets:', error);
       throw error;
@@ -324,6 +371,10 @@ class CatalogService {
       );
 
       logger.info(`Dataset updated: ${datasetId}`);
+      
+      // Invalidate cache after updating dataset
+      await cacheService.invalidateAll(datasetId);
+      
       return dataset;
     } catch (error) {
       logger.error('Error updating dataset:', error);
@@ -359,6 +410,10 @@ class CatalogService {
             .delete();
           
           logger.info(`Dataset deleted from PostgreSQL: ${datasetId}`);
+          
+          // Invalidate cache after deleting dataset
+          await cacheService.invalidateAll(datasetId);
+          
           return true;
         }
       } catch (pgError) {
@@ -380,6 +435,10 @@ class CatalogService {
       await DatasetModel.deleteOne({ datasetId });
 
       logger.info(`Dataset deleted from MongoDB: ${datasetId}`);
+      
+      // Invalidate cache after deleting dataset
+      await cacheService.invalidateAll(datasetId);
+      
       return true;
     } catch (error) {
       logger.error('Error deleting dataset:', error);
@@ -527,6 +586,16 @@ class CatalogService {
    */
   async searchDatasets(keyword) {
     try {
+      // Check cache first
+      const cacheKey = cacheService.generateSearchKey(keyword);
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        logger.debug(`Cache HIT: ${cacheKey}`);
+        return cached;
+      }
+      
+      logger.debug(`Cache MISS: ${cacheKey}`);
+      
       const allDatasets = [];
       
       // Search PostgreSQL catalog
@@ -577,6 +646,10 @@ class CatalogService {
       } catch (mongoError) {
         logger.debug('MongoDB search failed:', mongoError.message);
       }
+
+      // Store in cache
+      const ttl = appConfig.cache?.ttl?.search || 300;
+      await cacheService.set(cacheKey, allDatasets, ttl);
 
       return allDatasets;
     } catch (error) {
