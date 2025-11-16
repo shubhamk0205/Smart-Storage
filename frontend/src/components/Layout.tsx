@@ -5,7 +5,6 @@ import {
   Database, 
   Search, 
   Image, 
-  FileText, 
   Settings,
   Menu,
   X
@@ -19,7 +18,6 @@ const navItems = [
   { path: '/datasets', label: 'Datasets', icon: Database },
   { path: '/retrieval', label: 'Retrieval', icon: Search },
   { path: '/media', label: 'Media', icon: Image },
-  { path: '/logs', label: 'Logs', icon: FileText },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
