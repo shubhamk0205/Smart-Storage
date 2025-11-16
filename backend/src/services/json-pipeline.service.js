@@ -2,11 +2,14 @@ import fs from 'fs/promises';
 import { statSync } from 'fs';
 import ndjson from 'ndjson';
 import { createReadStream } from 'fs';
-import { parse } from 'stream-json';
-import { streamArray } from 'stream-json/streamers/StreamArray.js';
-import { streamObject } from 'stream-json/streamers/StreamObject.js';
+import streamJson from 'stream-json';
+import streamArray from 'stream-json/streamers/StreamArray.js';
+import streamObject from 'stream-json/streamers/StreamObject.js';
 import logger from '../utils/logger.js';
 import { appConfig } from '../config/app.config.js';
+
+// Extract named exports from CommonJS modules
+const { parse } = streamJson;
 
 class JsonPipelineService {
   /**
@@ -145,7 +148,7 @@ class JsonPipelineService {
 
     createReadStream(filePath, { encoding: 'utf8' })
       .pipe(parse())
-      .pipe(streamArray())
+      .pipe(streamArray.default ? streamArray.default() : streamArray())
       .on('data', ({ value }) => {
         if (firstChunk) {
           firstChunk = false;
@@ -210,7 +213,7 @@ class JsonPipelineService {
 
     createReadStream(filePath, { encoding: 'utf8' })
       .pipe(parse())
-      .pipe(streamObject())
+      .pipe(streamObject.default ? streamObject.default() : streamObject())
       .on('data', ({ key, value }) => {
         if (firstChunk) {
           firstChunk = false;

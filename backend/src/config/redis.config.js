@@ -58,7 +58,12 @@ export const initRedis = async () => {
 
     redis.on('ready', () => {
       isConnected = true;
+      const connectionInfo = redisUrl 
+        ? `URL: ${redisUrl.split('@')[1] || redisUrl}` 
+        : `Host: ${redisHost}:${redisPort}, DB: ${redisDb}`;
       logger.info('✅ Redis connected successfully!');
+      logger.info(`   ${connectionInfo}`);
+      logger.info('   Caching enabled and ready');
     });
 
     redis.on('error', (error) => {
@@ -77,8 +82,19 @@ export const initRedis = async () => {
     });
 
     // Wait for connection to be ready
-    await redis.ping();
-    isConnected = true;
+    try {
+      await redis.ping();
+      isConnected = true;
+      const connectionInfo = redisUrl 
+        ? `URL: ${redisUrl.split('@')[1] || redisUrl}` 
+        : `Host: ${redisHost}:${redisPort}, DB: ${redisDb}`;
+      logger.info('✅ Redis connected successfully!');
+      logger.info(`   ${connectionInfo}`);
+      logger.info('   Caching enabled and ready');
+    } catch (pingError) {
+      logger.warn('⚠️  Redis ping failed:', pingError.message);
+      isConnected = false;
+    }
 
     return redis;
   } catch (error) {
