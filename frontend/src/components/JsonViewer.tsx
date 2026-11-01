@@ -9,7 +9,7 @@ interface JsonViewerProps {
   collapsed?: number;
 }
 
-export const JsonViewer = ({ data, title, collapsed = 2 }: JsonViewerProps) => {
+export const JsonViewer = ({ data, title }: JsonViewerProps) => {
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = () => {

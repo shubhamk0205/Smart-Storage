@@ -1,6 +1,6 @@
-import { ReactNode, useEffect } from 'react';
+import { useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
-import { Button } from './Button';
 
 interface ModalProps {
   isOpen: boolean;
@@ -50,7 +50,7 @@ export const Modal = ({ isOpen, onClose, title, children, size = 'md' }: ModalPr
         <div
           className={`inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle ${sizes[size]} w-full`}
         >
-          {(title || onClose) && (
+          {(
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               {title && (
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white" id="modal-title">

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { CheckCircle2, Database, FileJson, Code, Loader2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
@@ -8,11 +8,9 @@ import { Table, TableHead, TableHeader, TableBody, TableRow, TableCell } from '.
 import { processJson, getJsonProfile } from '../services/api';
 import type { Dataset, JsonProfile } from '../types';
 import toast from 'react-hot-toast';
-import { Skeleton } from '../components/Skeleton';
 
 export const JsonProcessing = () => {
   const { stagingId } = useParams<{ stagingId: string }>();
-  const navigate = useNavigate();
   const [datasetName, setDatasetName] = useState('');
   const [processing, setProcessing] = useState(false);
   const [profile, setProfile] = useState<JsonProfile | null>(null);
@@ -84,7 +82,7 @@ export const JsonProcessing = () => {
     if (!profile || !dataset) return {};
     const properties: Record<string, any> = {};
     profile.fields.forEach(field => {
-      let type = field.type;
+      let type: string | Record<string, unknown> = field.type;
       if (field.array) type = { type: 'array', items: { type: field.type } };
       if (field.nested) type = { type: 'object' };
       properties[field.name] = {

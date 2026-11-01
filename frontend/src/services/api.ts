@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { StagingFile, MediaAsset, Dataset, JsonProfile, Job, DetectionResult, MediaMetadata } from '../types';
+import type { StagingFile, MediaAsset, Dataset, JsonProfile, Job, DetectionResult } from '../types';
 
 // Base URL will be set dynamically from settings context
 const getBaseURL = () => {

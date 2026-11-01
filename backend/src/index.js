@@ -30,7 +30,13 @@ const app = express();
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+// CORS: restrict to a comma-separated allow-list in production (CORS_ORIGINS),
+// allow all origins when unset (local development).
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors(corsOrigins.length ? { origin: corsOrigins } : {}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

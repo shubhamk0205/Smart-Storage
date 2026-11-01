@@ -16,7 +16,7 @@ export const Settings = () => {
     postgres?: boolean;
     mongo?: boolean;
   } | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
 
   useEffect(() => {
     loadHealth();

@@ -10,7 +10,6 @@ import {
   X
 } from 'lucide-react';
 import { useState } from 'react';
-import { useTheme } from '../contexts/ThemeContext';
 
 const navItems = [
   { path: '/upload', label: 'Upload', icon: Upload },
@@ -24,7 +23,6 @@ const navItems = [
 export const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { theme } = useTheme();
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">

@@ -2,6 +2,25 @@
 
 A full-stack intelligent storage system that accepts arbitrary files, auto-generates schemas, and provides a unified retrieval API.
 
+## Live Demo
+
+- **App:** _coming soon (Vercel)_
+- **API health:** _coming soon (Render)_ `/api/health`
+
+> The API runs on Render's free tier, so the first request after ~15 minutes of inactivity can take ~30 seconds while it wakes up.
+
+## Deployment
+
+| Part | Host | Config |
+|------|------|--------|
+| Frontend (React + Vite) | Vercel | `frontend/vercel.json` (Root Directory = `frontend`) |
+| Backend (Express API, Docker with ffmpeg) | Render | `render.yaml` + `backend/Dockerfile` |
+| PostgreSQL | Supabase | `DATABASE_URL` (use the **pooler** connection string) |
+| MongoDB | MongoDB Atlas | `MONGO_URI` |
+
+**Backend env vars (Render):** `DATABASE_URL`, `FORCE_IPV4=true`, `PG_SSL=true`, `MONGO_URI`, `CORS_ORIGINS` (your Vercel URL), `CLOUDINARY_*`.
+**Frontend env vars (Vercel):** `VITE_API_BASE_URL=https://<your-render-service>.onrender.com/api`.
+
 ## Project Structure
 
 ```

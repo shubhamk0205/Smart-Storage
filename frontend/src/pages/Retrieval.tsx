@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Play, Copy, Download, Table as TableIcon, FileJson } from 'lucide-react';
+import { Play, Copy, Table as TableIcon, FileJson } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { JsonViewer } from '../components/JsonViewer';
@@ -118,8 +118,6 @@ export const Retrieval = () => {
     toast.success('Request body copied to clipboard');
   };
 
-  const selectedDatasetData = datasets.find(d => d.name === selectedDataset);
-  const availableFields = selectedDatasetData ? ['id', ...(selectedDatasetData.entities || [])] : [];
 
   return (
     <div className="space-y-6">

@@ -1,0 +1,27 @@
+# Render Blueprint: deploys the backend API as a Docker web service.
+# The frontend is deployed separately on Vercel (see frontend/vercel.json).
+services:
+  - type: web
+    name: smart-storage-api
+    runtime: docker
+    plan: free
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL        # Supabase *pooler* connection string (IPv4)
+        sync: false
+      - key: FORCE_IPV4          # Render has no outbound IPv6
+        value: "true"
+      - key: PG_SSL
+        value: "true"
+      - key: MONGO_URI           # MongoDB Atlas connection string
+        sync: false
+      - key: CORS_ORIGINS        # e.g. https://smart-storage.vercel.app
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Grid, List, Download, Copy, Eye, Image as ImageIcon } from 'lucide-react';
+import { Grid, List, Download, Copy, Eye, Image as ImageIcon } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Modal } from '../components/Modal';

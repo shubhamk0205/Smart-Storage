@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, Copy, Image as ImageIcon, Video } from 'lucide-react';
+import { CheckCircle2, Copy } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { JsonViewer } from '../components/JsonViewer';
-import { processMedia, getMediaAsset } from '../services/api';
+import { processMedia } from '../services/api';
 import type { MediaAsset } from '../types';
 import toast from 'react-hot-toast';
 import { Skeleton } from '../components/Skeleton';
@@ -14,19 +14,7 @@ export const MediaProcessing = () => {
   const [destinationKey, setDestinationKey] = useState('');
   const [processing, setProcessing] = useState(false);
   const [mediaAsset, setMediaAsset] = useState<MediaAsset | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const loadMediaAsset = async (assetId: string) => {
-    try {
-      setLoading(true);
-      const asset = await getMediaAsset(assetId);
-      setMediaAsset(asset);
-    } catch (error: any) {
-      toast.error('Failed to load media asset');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [loading] = useState(false);
 
   const handleProcess = async () => {
     if (!stagingId) return;
