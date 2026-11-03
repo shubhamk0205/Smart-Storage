@@ -4,8 +4,8 @@ A full-stack intelligent storage system that accepts arbitrary files, auto-gener
 
 ## Live Demo
 
-- **App:** _coming soon (Vercel)_
-- **API health:** _coming soon (Render)_ `/api/health`
+- **App:** https://smart-storage-omega.vercel.app
+- **API health:** https://smart-storage-api.onrender.com/api/health
 
 > The API runs on Render's free tier, so the first request after ~15 minutes of inactivity can take ~30 seconds while it wakes up.
 
