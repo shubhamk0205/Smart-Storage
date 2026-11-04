@@ -147,8 +147,8 @@ class JsonPipelineService {
     const streamingBatchSize = appConfig.json?.streamingBatchSize || 10000;
 
     createReadStream(filePath, { encoding: 'utf8' })
-      .pipe(parse())
-      .pipe(streamArray.default ? streamArray.default() : streamArray())
+      .pipe(streamJson.parser())
+      .pipe(streamArray.make())
       .on('data', ({ value }) => {
         if (firstChunk) {
           firstChunk = false;
@@ -212,8 +212,8 @@ class JsonPipelineService {
     let firstChunk = true;
 
     createReadStream(filePath, { encoding: 'utf8' })
-      .pipe(parse())
-      .pipe(streamObject.default ? streamObject.default() : streamObject())
+      .pipe(streamJson.parser())
+      .pipe(streamObject.make())
       .on('data', ({ key, value }) => {
         if (firstChunk) {
           firstChunk = false;
