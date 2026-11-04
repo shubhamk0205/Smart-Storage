@@ -7,6 +7,10 @@ A full-stack intelligent storage system that accepts arbitrary files, auto-gener
 - **App:** https://smart-storage-omega.vercel.app
 - **API health:** https://smart-storage-api.onrender.com/api/health
 
+![Smart Storage demo: upload a JSON file, it is routed to MongoDB and its schema is generated](docs/demo.gif)
+
+**Measured on the live deployment** (Render free tier → Supabase Postgres): a 10 MB JSON array with 98,565 records is uploaded, streamed, schema-inferred and loaded into PostgreSQL in ~46 s end to end (2 runs, Nov 2026).
+
 > The API runs on Render's free tier, so the first request after ~15 minutes of inactivity can take ~30 seconds while it wakes up.
 
 ## Deployment
